@@ -1,0 +1,24 @@
+[project]
+name = "partiu"
+version = "0.1.0"
+description = "Offline component tracker (tkinter GUI + pure SQLite, no external deps)"
+authors = [
+    {name = "Vitor Roque", email = "vitor.roquep@gmail.com"}
+]
+requires-python = ">=3.11,<3.16"
+dependencies = []
+
+[tool.poetry]
+packages = [
+    { include = "partiu", from = "src" }
+]
+
+[tool.poetry.scripts]
+partiu = "partiu.main:main"
+
+[tool.poetry.group.dev.dependencies]
+pyinstaller = ">=6.11.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

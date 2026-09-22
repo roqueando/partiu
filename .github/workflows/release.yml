@@ -1,0 +1,52 @@
+name: Build Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon (arm64). For Intel Macs use macos-13 instead.
+          - os: macos-14
+            artifact: Partiu-macOS.zip
+          - os: windows-latest
+            artifact: dist/Partiu.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --noconfirm packaging/partiu.spec
+          # Ad-hoc sign so the bundle is internally consistent (still unsigned
+          # for distribution; users may need to right-click -> Open the first time).
+          codesign --force --deep --sign - "dist/Partiu.app"
+          ditto -c -k --keepParent "dist/Partiu.app" "Partiu-macOS.zip"
+
+      - name: Build Windows executable
+        if: runner.os == 'Windows'
+        run: pyinstaller --noconfirm --onefile --windowed --name Partiu --paths src run.py
+
+      - name: Upload asset to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}
