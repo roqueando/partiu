@@ -6,7 +6,10 @@ authors = [
     {name = "Vitor Roque", email = "vitor.roquep@gmail.com"}
 ]
 requires-python = ">=3.11,<3.16"
-dependencies = []
+dependencies = [
+    "pdfplumber>=0.11.0",
+    "pillow>=10.0.0",
+]
 
 [tool.poetry]
 packages = [

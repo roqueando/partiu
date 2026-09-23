@@ -42,13 +42,14 @@ class CrudView(ttk.Frame):
         self.search_bar = SearchBar(self, on_search=self._on_search)
         self.search_bar.pack(fill="x", padx=8, pady=(0, 4))
 
-        self.table = DataTable(self, columns=self.columns, on_activate=self.edit)
+        self.table = DataTable(self, columns=self.columns, on_activate=self.open)
         self.table.pack(fill="both", expand=True, padx=8, pady=4)
 
         actions = ttk.Frame(self)
         actions.pack(fill="x", padx=8, pady=(0, 8))
         ttk.Button(actions, text="New", command=self.new).pack(side="left")
         ttk.Button(actions, text="Edit", command=self.edit).pack(side="left", padx=(6, 0))
+        self._build_extra_actions(actions)
         ttk.Button(actions, text="Delete", command=self.delete).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="Refresh", command=self.load).pack(side="right")
 
@@ -124,6 +125,13 @@ class CrudView(ttk.Frame):
         return None
 
     # ------------------------------------------------------ subclass hooks
+
+    def _build_extra_actions(self, actions: ttk.Frame) -> None:
+        """Hook for subclasses to add buttons to the actions row."""
+
+    def open(self) -> None:
+        """Default action for double-click; subclasses may override."""
+        self.edit()
 
     @property
     def title_singular(self) -> str:

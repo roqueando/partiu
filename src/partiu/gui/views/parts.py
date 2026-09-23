@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from tkinter import messagebox, ttk
 from typing import Any
 
 from ..widgets import FieldSpec
 from .base import CrudView
+from .detail import PartDetailView
 
 
 class PartsView(CrudView):
@@ -28,6 +30,21 @@ class PartsView(CrudView):
             FieldSpec("Units", "units", kind="entry"),
             FieldSpec("Active", "active", kind="check", default=True),
         ]
+
+    def _build_extra_actions(self, actions) -> None:
+        ttk.Button(actions, text="Details", command=self.show_details).pack(
+            side="left", padx=(6, 0)
+        )
+
+    def open(self) -> None:
+        self.show_details()
+
+    def show_details(self) -> None:
+        pk = self.table.selected_pk()
+        if pk is None:
+            messagebox.showinfo(self.title, "Select a part to view details.")
+            return
+        PartDetailView(self, self.db, pk)
 
     def fetch(self, search: str | None) -> list[dict[str, Any]]:
         return self.db.list_parts(search=search)
