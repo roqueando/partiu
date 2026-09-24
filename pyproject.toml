@@ -20,7 +20,7 @@ packages = [
 partiu = "partiu.main:main"
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = ">=6.11.0"
+nuitka = { version = ">=2.0.0", extras = ["app", "onefile"] }
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
