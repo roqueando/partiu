@@ -68,6 +68,10 @@ attaches:
 - `Partiu-macOS.zip` (Apple Silicon `.app`)
 - `Partiu.exe` (Windows, single file)
 
+To test a build **without creating a release**, run the workflow manually
+(Actions → Build Release → Run workflow). The built files are then uploaded as
+runnable/downloadable artifacts instead of being attached to a release.
+
 > **macOS Gatekeeper:** the `.app` is not notarized. On first launch, right-click
 > the app and choose **Open** (or run
 > `xattr -dr com.apple.quarantine /Applications/Partiu.app`).

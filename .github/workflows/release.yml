@@ -3,6 +3,7 @@ name: Build Release
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -54,6 +55,8 @@ jobs:
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Build Windows executable
         if: runner.os == 'Windows'
@@ -71,7 +74,15 @@ jobs:
           --assume-yes-for-downloads
           run.py
 
+      - name: Upload artifact (manual test)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: ${{ matrix.artifact }}
+
       - name: Upload asset to release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.artifact }}
