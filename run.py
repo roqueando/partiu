@@ -1,4 +1,4 @@
-"""PyInstaller entry point for the Partiu application."""
+"""Packaged-app entry point for the Partiu application."""
 
 from partiu.main import main
 

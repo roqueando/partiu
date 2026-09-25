@@ -46,10 +46,18 @@ Everything else is the Python standard library (`tkinter`, `sqlite3`).
 
 ```bash
 poetry install
-# macOS -> dist/Partiu.app
-poetry run pyinstaller --noconfirm packaging/partiu.spec
-# Windows -> dist/Partiu.exe (single file)
-poetry run pyinstaller --noconfirm --onefile --windowed --name Partiu --paths src run.py
+# macOS -> Partiu.app
+poetry run python -m nuitka --standalone --macos-create-app-bundle --macos-app-name=Partiu \
+  --enable-plugin=tk-inter --include-package=PIL --include-package=pdfplumber \
+  --include-package=pdfminer --include-package=pypdfium2 \
+  --include-package-data=pdfminer --include-package-data=pypdfium2 \
+  --assume-yes-for-downloads run.py
+# Windows -> Partiu.exe (single file; needs MSVC — run from a VS Developer Command Prompt)
+poetry run python -m nuitka --standalone --onefile --enable-plugin=tk-inter \
+  --include-package=PIL --include-package=pdfplumber --include-package=pdfminer \
+  --include-package=pypdfium2 --include-package-data=pdfminer \
+  --include-package-data=pypdfium2 --windows-console-mode=disable \
+  --output-filename=Partiu.exe --assume-yes-for-downloads run.py
 ```
 
 ## Release artifacts
@@ -59,6 +67,10 @@ attaches:
 
 - `Partiu-macOS.zip` (Apple Silicon `.app`)
 - `Partiu.exe` (Windows, single file)
+
+To test a build **without creating a release**, run the workflow manually
+(Actions → Build Release → Run workflow). The built files are then uploaded as
+runnable/downloadable artifacts instead of being attached to a release.
 
 > **macOS Gatekeeper:** the `.app` is not notarized. On first launch, right-click
 > the app and choose **Open** (or run
