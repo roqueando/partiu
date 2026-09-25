@@ -193,6 +193,55 @@ class Database:
         self.conn.commit()
         return {"pk": cursor.lastrowid}
 
+    def import_parts(self, rows: list[dict[str, Any]]) -> dict[str, int]:
+        """Bulk-insert parts in one transaction, deduplicating by name.
+
+        Rows missing a ``name`` are skipped; rows whose ``name``
+        (case-insensitive) already exists in the database are skipped as
+        duplicates.  Returns counts for ``created``, ``skipped`` and
+        ``duplicates``.
+        """
+        existing = {
+            (row["name"] or "").strip().lower()
+            for row in self.conn.execute("SELECT name FROM part").fetchall()
+        }
+        created = 0
+        skipped = 0
+        duplicates = 0
+        try:
+            for data in rows:
+                name = (data.get("name") or "").strip()
+                if not name:
+                    skipped += 1
+                    continue
+                key = name.lower()
+                if key in existing:
+                    duplicates += 1
+                    continue
+                existing.add(key)
+                self.conn.execute(
+                    "INSERT INTO part (name, ipn, category, description, units,"
+                    " manufacturer, package, package_size, active)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        name,
+                        data.get("IPN"),
+                        data.get("category"),
+                        data.get("description"),
+                        data.get("units"),
+                        data.get("manufacturer"),
+                        data.get("package"),
+                        data.get("package_size"),
+                        1 if data.get("active", True) else 0,
+                    ),
+                )
+                created += 1
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return {"created": created, "skipped": skipped, "duplicates": duplicates}
+
     def update_part(self, pk: int, data: dict[str, Any]) -> dict[str, Any]:
         self.conn.execute(
             "UPDATE part SET name = ?, ipn = ?, category = ?, description = ?,"
