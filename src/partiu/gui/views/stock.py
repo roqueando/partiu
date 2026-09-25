@@ -24,7 +24,7 @@ class StockView(CrudView):
     columns = [
         ("part_name", "Part", 220),
         ("quantity", "Qty", 70),
-        ("location_name", "Location", 160),
+        ("location_label", "Location", 160),
         ("serial", "Serial", 120),
         ("batch", "Batch", 100),
         ("status_text", "Status", 140),
@@ -35,8 +35,10 @@ class StockView(CrudView):
         part_options = [(p["pk"], p.get("name") or f"#{p['pk']}") for p in parts]
 
         locations = self.db.list_stock_locations()
+        drawers = [loc for loc in locations if loc.get("parent_id") is not None]
         location_options = [(None, "(none)")] + [
-            (loc["pk"], loc.get("name") or f"#{loc['pk']}") for loc in locations
+            (loc["pk"], loc.get("label") or loc.get("name") or f"#{loc['pk']}")
+            for loc in drawers
         ]
 
         return [

@@ -147,11 +147,30 @@ class Database:
         query += " ORDER BY p.name"
 
         rows = self.conn.execute(query, params).fetchall()
+
+        locations = self._location_map()
+        loc_rows = self.conn.execute(
+            "SELECT part_id, location_id, SUM(quantity) AS quantity"
+            " FROM stock_item WHERE location_id IS NOT NULL"
+            " GROUP BY part_id, location_id"
+        ).fetchall()
+        part_locations: dict[int, list[dict[str, Any]]] = {}
+        for loc in loc_rows:
+            part_locations.setdefault(loc["part_id"], []).append(
+                {
+                    "label": self._location_label(locations, loc["location_id"]),
+                    "quantity": _fmt_qty(loc["quantity"]),
+                }
+            )
+
         result = []
         for row in rows:
             item = dict(row)
             item["active"] = bool(item["active"])
             item["in_stock"] = _fmt_qty(item["in_stock"])
+            item["locations"] = sorted(
+                part_locations.get(item["pk"], []), key=lambda d: d["label"]
+            )
             result.append(item)
         return result
 
@@ -274,6 +293,7 @@ class Database:
         query = """
             SELECT s.id AS pk, s.quantity, s.serial, s.batch,
                    s.status AS status_text,
+                   s.location_id AS location_id,
                    p.name AS part_name, p.ipn AS part_ipn,
                    l.name AS location_name
             FROM stock_item s
@@ -291,12 +311,17 @@ class Database:
         query += " ORDER BY s.id DESC"
 
         rows = self.conn.execute(query, params).fetchall()
+        locations = self._location_map()
         result = []
         for row in rows:
             item = dict(row)
             item["quantity"] = _fmt_qty(item["quantity"])
             item["part_name"] = item.get("part_name") or item.get("part_ipn") or ""
             item.pop("part_ipn", None)
+            location_id = item.get("location_id")
+            item["location_label"] = (
+                self._location_label(locations, location_id) if location_id else ""
+            )
             result.append(item)
         return result
 
@@ -362,6 +387,7 @@ class Database:
         result = []
         for item in locations.values():
             item["pathstring"] = self._location_path(locations, item["pk"])
+            item["label"] = self._location_label(locations, item["pk"])
             item["items"] = item_counts.get(item["pk"], 0)
             item["sublocations"] = child_counts.get(item["pk"], 0)
             result.append(item)
@@ -387,6 +413,31 @@ class Database:
             parent = current.get("parent_id")
             current = locations.get(parent) if parent else None
         return " / ".join(reversed(parts))
+
+    def _location_label(self, locations: dict[int, dict], pk: int) -> str:
+        """Return the compact drawer label by joining names root-to-leaf.
+
+        Gaveteiro ``A`` + gaveta ``1`` -> ``A1``.
+        """
+        names: list[str] = []
+        seen: set[int] = set()
+        current = locations.get(pk)
+        while current and current["pk"] not in seen:
+            seen.add(current["pk"])
+            names.append(current["name"])
+            parent = current.get("parent_id")
+            current = locations.get(parent) if parent else None
+        return "".join(reversed(names))
+
+    def _location_map(self) -> dict[int, dict[str, Any]]:
+        """Return ``{id: {pk, name, parent_id}}`` for all stock locations."""
+        rows = self.conn.execute(
+            "SELECT id, name, parent_id FROM stock_location"
+        ).fetchall()
+        return {
+            row["id"]: {"pk": row["id"], "name": row["name"], "parent_id": row["parent_id"]}
+            for row in rows
+        }
 
     def create_stock_location(self, data: dict[str, Any]) -> dict[str, Any]:
         cursor = self.conn.execute(

@@ -44,6 +44,19 @@ Rows with an empty `name` are skipped, and rows whose `name` already exists in
 the database (case-insensitive) are skipped as duplicates. The import is
 atomic: if anything fails, no rows are inserted.
 
+## Storage drawers (gavetas)
+
+Organize physical storage as a two-level hierarchy of **Stock Locations**:
+
+1. Create a **Gaveteiro** (cabinet) as a top-level location with a short letter
+   name, e.g. `A`.
+2. Create each **Gaveta** (drawer) under it with a number name, e.g. `1`.
+
+The drawer's **label** is the concatenation of both, e.g. `A1`. Assign stock
+items to a drawer in **Stock Items**, then search a part name in **Parts** —
+the **Locations** column shows which drawers hold it and how many, e.g.
+`A1 ×3, B2 ×2`.
+
 ## Run (development)
 
 ```bash

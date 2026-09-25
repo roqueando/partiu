@@ -12,6 +12,7 @@ class LocationsView(CrudView):
     title = "Stock Locations"
     columns = [
         ("name", "Name", 200),
+        ("label", "Label", 80),
         ("description", "Description", 260),
         ("pathstring", "Path", 260),
         ("items", "Items", 60),

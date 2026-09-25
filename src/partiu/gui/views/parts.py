@@ -19,6 +19,7 @@ class PartsView(CrudView):
         ("IPN", "IPN", 140),
         ("category", "Category", 160),
         ("description", "Description", 240),
+        ("locations", "Locations", 180),
         ("active", "Active", 60),
         ("in_stock", "In Stock", 70),
     ]
@@ -96,7 +97,12 @@ class PartsView(CrudView):
         messagebox.showinfo(self.title, f"Template saved to:\n{destination}")
 
     def fetch(self, search: str | None) -> list[dict[str, Any]]:
-        return self.db.list_parts(search=search)
+        rows = self.db.list_parts(search=search)
+        for row in rows:
+            row["locations"] = ", ".join(
+                f"{loc['label']} ×{loc['quantity']}" for loc in row.get("locations", [])
+            )
+        return rows
 
     def create(self, data: dict[str, Any]) -> None:
         self.db.create_part(data)
