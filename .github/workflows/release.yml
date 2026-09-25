@@ -117,6 +117,7 @@ jobs:
           --windows-create-installer
           --windows-installer-output=Partiu-Setup.exe
           --windows-installer-shortcuts=desktop,start-menu
+          --windows-installer-mode=user
           --windows-icon-from-ico=partiu.ico
           --windows-console-mode=disable
           "--company-name=fabryk industries"

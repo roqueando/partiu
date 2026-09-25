@@ -103,7 +103,7 @@ hdiutil create -volname "Partiu" -srcfolder dmg_stage -ov -format UDZO "Partiu.d
 # Windows -> Partiu-Setup.exe (instalador NSIS; requer MSVC — rode no VS Developer Command Prompt)
 poetry run python -m nuitka --standalone --windows-create-installer \
   --windows-installer-output=Partiu-Setup.exe --windows-installer-shortcuts=desktop,start-menu \
-  --windows-icon-from-ico=partiu.ico --windows-console-mode=disable \
+  --windows-installer-mode=user --windows-icon-from-ico=partiu.ico --windows-console-mode=disable \
   --company-name="fabryk industries" --product-name="Partiu" \
   --file-version="0.1.0" --product-version="0.1.0" \
   --file-description="Offline component tracker" --copyright="2026 fabryk industries" \
@@ -143,3 +143,13 @@ certificates are added:
 
 Until then, builds are unsigned; a code-signing certificate (OV/EV for Windows,
 Developer ID for macOS) is what removes the Defender / Gatekeeper warnings.
+
+### Windows installer: "Error opening file for writing"
+
+This error during install usually means the installer could not overwrite a
+file because it is locked (a running copy of the app, or antivirus scanning)
+or because it lacks permission. The build already installs **per-user**
+(`--windows-installer-mode=user`, no admin/UAC needed). If it still happens:
+close any running Partiu instance and retry — the underlying trigger is
+typically the unsigned binary being scanned aggressively by antivirus, which
+code signing resolves.
