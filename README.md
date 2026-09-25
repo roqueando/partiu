@@ -83,18 +83,33 @@ Runtime: `pdfplumber` (PDF table extraction), `pillow` (photo display) and
 
 ```bash
 poetry install
-# macOS -> Partiu.app
-poetry run python -m nuitka --standalone --macos-create-app-bundle --macos-app-name=Partiu \
+python scripts/make_icons.py all   # gera partiu.ico + partiu.icns
+
+# macOS -> Partiu.app, depois Partiu.dmg
+poetry run python -m nuitka --standalone --macos-create-app-bundle \
+  --macos-app-name=Partiu --macos-app-version="0.1.0" \
+  --macos-signed-app-name=com.fabrykindustries.partiu --macos-app-icon=partiu.icns \
   --output-folder-name=Partiu --output-filename=Partiu \
+  --company-name="fabryk industries" --product-name="Partiu" \
+  --file-version="0.1.0" --product-version="0.1.0" \
+  --file-description="Offline component tracker" --copyright="2026 fabryk industries" \
   --enable-plugin=tk-inter --include-package=PIL --include-package=pdfplumber \
   --include-package=pdfminer --include-package=pypdfium2 --include-package=openpyxl \
   --include-package-data=pdfminer --include-package-data=pypdfium2 \
   --assume-yes-for-downloads run.py
-# Windows -> Partiu.exe (single file; needs MSVC — run from a VS Developer Command Prompt)
-poetry run python -m nuitka --standalone --onefile --enable-plugin=tk-inter \
-  --include-package=PIL --include-package=pdfplumber --include-package=pdfminer \
-  --include-package=pypdfium2 --include-package=openpyxl --include-package-data=pdfminer \
-  --include-package-data=pypdfium2 --windows-console-mode=disable \
+mkdir -p dmg_stage && cp -R "Partiu.app" dmg_stage/ && ln -s /Applications dmg_stage/Applications
+hdiutil create -volname "Partiu" -srcfolder dmg_stage -ov -format UDZO "Partiu.dmg"
+
+# Windows -> Partiu-Setup.exe (instalador NSIS; requer MSVC — rode no VS Developer Command Prompt)
+poetry run python -m nuitka --standalone --windows-create-installer \
+  --windows-installer-output=Partiu-Setup.exe --windows-installer-shortcuts=desktop,start-menu \
+  --windows-icon-from-ico=partiu.ico --windows-console-mode=disable \
+  --company-name="fabryk industries" --product-name="Partiu" \
+  --file-version="0.1.0" --product-version="0.1.0" \
+  --file-description="Offline component tracker" --copyright="2026 fabryk industries" \
+  --enable-plugin=tk-inter --include-package=PIL --include-package=pdfplumber \
+  --include-package=pdfminer --include-package=pypdfium2 --include-package=openpyxl \
+  --include-package-data=pdfminer --include-package-data=pypdfium2 \
   --output-filename=Partiu.exe --assume-yes-for-downloads run.py
 ```
 
@@ -103,13 +118,28 @@ poetry run python -m nuitka --standalone --onefile --enable-plugin=tk-inter \
 Creating a GitHub release triggers `.github/workflows/release.yml`, which builds and
 attaches:
 
-- `Partiu-macOS.zip` (Apple Silicon `.app`)
-- `Partiu.exe` (Windows, single file)
+- `Partiu.dmg` (macOS, Apple Silicon)
+- `Partiu-Setup.exe` (Windows NSIS installer)
 
 To test a build **without creating a release**, run the workflow manually
 (Actions → Build Release → Run workflow). The built files are then uploaded as
 runnable/downloadable artifacts instead of being attached to a release.
 
-> **macOS Gatekeeper:** the `.app` is not notarized. On first launch, right-click
-> the app and choose **Open** (or run
-> `xattr -dr com.apple.quarantine /Applications/Partiu.app`).
+> **Not signed yet:** the artifacts are built with full metadata but **without
+> code signing** (no certificate configured). Windows Defender may still warn,
+> and macOS Gatekeeper shows an "unidentified developer" prompt until
+> certificates are added — see **Code signing** below.
+
+## Code signing
+
+The workflow has signing steps ready, gated on secrets so they run only once
+certificates are added:
+
+- **Windows**: add secrets `WINDOWS_SIGNING_CERT` (base64 of the `.pfx`) and
+  `WINDOWS_SIGNING_PASSWORD`. The step signs `Partiu-Setup.exe` with `signtool`.
+- **macOS**: add a Developer ID certificate plus secrets `APPLE_ID`,
+  `APPLE_TEAM_ID` and `APPLE_APP_SPECIFIC_PASSWORD` to sign and notarize the
+  DMG.
+
+Until then, builds are unsigned; a code-signing certificate (OV/EV for Windows,
+Developer ID for macOS) is what removes the Defender / Gatekeeper warnings.

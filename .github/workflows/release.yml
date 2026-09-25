@@ -18,9 +18,9 @@ jobs:
         include:
           # Apple Silicon (arm64). For Intel Macs use macos-13 instead.
           - os: macos-14
-            artifact: Partiu-macOS.zip
+            artifact: Partiu.dmg
           - os: windows-latest
-            artifact: Partiu.exe
+            artifact: Partiu-Setup.exe
 
     steps:
       - name: Checkout
@@ -34,12 +34,31 @@ jobs:
       - name: Install project + Nuitka
         run: python -m pip install --upgrade pip . nuitka zstandard
 
+      - name: Read version
+        run: python -c "import tomllib, os; v = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']; open(os.environ['GITHUB_ENV'], 'a').write('VERSION=' + v + chr(10))"
+
+      # ------------------------------------------------------------------ macOS
+
+      - name: Make macOS icon
+        if: runner.os == 'macOS'
+        run: python scripts/make_icons.py icns
+
       - name: Build macOS app
         if: runner.os == 'macOS'
         run: |
-          python -m nuitka --standalone --macos-create-app-bundle --macos-app-name=Partiu \
+          python -m nuitka --standalone --macos-create-app-bundle \
+            --macos-app-name=Partiu \
+            --macos-app-version="$VERSION" \
+            --macos-signed-app-name=com.fabrykindustries.partiu \
+            --macos-app-icon=partiu.icns \
             --output-folder-name=Partiu \
             --output-filename=Partiu \
+            --company-name="fabryk industries" \
+            --product-name="Partiu" \
+            --file-version="$VERSION" \
+            --product-version="$VERSION" \
+            --file-description="Offline component tracker" \
+            --copyright="2026 fabryk industries" \
             --enable-plugin=tk-inter \
             --include-package=PIL \
             --include-package=pdfplumber \
@@ -50,10 +69,36 @@ jobs:
             --include-package-data=pypdfium2 \
             --assume-yes-for-downloads \
             run.py
-          # Ad-hoc sign so the bundle is internally consistent (still unsigned
-          # for distribution; users may need to right-click -> Open the first time).
-          codesign --force --deep --sign - "Partiu.app"
-          ditto -c -k --keepParent "Partiu.app" "Partiu-macOS.zip"
+
+      - name: Create macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          rm -rf dmg_stage
+          mkdir -p dmg_stage
+          cp -R "Partiu.app" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "Partiu" -srcfolder dmg_stage -ov -format UDZO "Partiu.dmg"
+          rm -rf dmg_stage
+
+      - name: Notarize macOS (only with Developer ID)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            echo "No Apple Developer credentials; skipping notarization."
+          else
+            xcrun notarytool submit "Partiu.dmg" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+            xcrun stapler staple "Partiu.dmg"
+          fi
+
+      # --------------------------------------------------------------- Windows
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -61,10 +106,25 @@ jobs:
         with:
           arch: x64
 
-      - name: Build Windows executable
+      - name: Make Windows icon
+        if: runner.os == 'Windows'
+        run: python scripts/make_icons.py ico
+
+      - name: Build Windows installer
         if: runner.os == 'Windows'
         run: >-
-          python -m nuitka --standalone --onefile
+          python -m nuitka --standalone
+          --windows-create-installer
+          --windows-installer-output=Partiu-Setup.exe
+          --windows-installer-shortcuts=desktop,start-menu
+          --windows-icon-from-ico=partiu.ico
+          --windows-console-mode=disable
+          "--company-name=fabryk industries"
+          --product-name=Partiu
+          "--file-version=$env:VERSION"
+          "--product-version=$env:VERSION"
+          "--file-description=Offline component tracker"
+          "--copyright=2026 fabryk industries"
           --enable-plugin=tk-inter
           --include-package=PIL
           --include-package=pdfplumber
@@ -73,10 +133,27 @@ jobs:
           --include-package=openpyxl
           --include-package-data=pdfminer
           --include-package-data=pypdfium2
-          --windows-console-mode=disable
           --output-filename=Partiu.exe
           --assume-yes-for-downloads
           run.py
+
+      - name: Sign Windows installer (only with cert)
+        if: runner.os == 'Windows'
+        env:
+          CERT_B64: ${{ secrets.WINDOWS_SIGNING_CERT }}
+          CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        shell: pwsh
+        run: |
+          if (-not $env:CERT_B64) {
+            Write-Host "No Windows signing certificate; skipping."
+          } else {
+            $bytes = [Convert]::FromBase64String($env:CERT_B64)
+            [IO.File]::WriteAllBytes("cert.pfx", $bytes)
+            & signtool sign /f cert.pfx /p $env:CERT_PASSWORD /fd SHA256 `
+              /tr http://timestamp.digicert.com /td SHA256 /d "Partiu" "Partiu-Setup.exe"
+          }
+
+      # ----------------------------------------------------------------- upload
 
       - name: Upload artifact (manual test)
         if: github.event_name == 'workflow_dispatch'

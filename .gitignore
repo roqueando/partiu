@@ -11,6 +11,17 @@ venv/
 # Part-DB local data (created by docker-compose)
 db/
 
+# Generated app icons
+partiu.ico
+partiu.icns
+
+# Nuitka build artifacts
+Partiu.app/
+Partiu.build/
+Partiu.dist/
+Partiu.dmg
+dmg_stage/
+
 # OS
 .DS_Store
 Thumbs.db
