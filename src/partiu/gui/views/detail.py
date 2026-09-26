@@ -10,11 +10,16 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from ... import pdf_extract
-from ..photo_viewer import PhotoViewer
 from ..widgets import DataTable, FieldSpec, FormDialog
+
+#: Photo thumbnail + magnifier lens sizes.
+_PHOTO_SIZE = 240
+_LENS_SIZE = 120
+_LENS_MAGNIFY = 1.5
+_LENS_MOVE_THRESHOLD = 3
 
 _PIN_COLUMNS = [
     ("pin_number", "Pin", 60),
@@ -74,7 +79,12 @@ class PartDetailView(tk.Toplevel):
         self.transient(master)
 
         self._photo_ref = None
-        self._photo_path: Path | None = None
+        self._photo_image = None       # full-res RGBA image used by the lens
+        self._lens_photo = None
+        self._lens_enabled = False
+        self._photo_scale = 1.0
+        self._photo_offset = (0, 0)
+        self._last_lens_pos: tuple[int, int] | None = None
         self._info_vars: dict[str, tk.StringVar] = {}
         self._datasheet_label: ttk.Label | None = None
 
@@ -91,10 +101,21 @@ class PartDetailView(tk.Toplevel):
         header = ttk.Frame(top)
         header.pack(fill="x")
 
-        self.photo_label = ttk.Label(
-            header, text="(no photo)", anchor="center", relief="solid", width=32
+        self.photo_canvas = tk.Canvas(
+            header,
+            width=_PHOTO_SIZE,
+            height=_PHOTO_SIZE,
+            highlightthickness=0,
+            relief="solid",
+            bd=1,
+            background="#f0f0f0",
         )
-        self.photo_label.pack(side="left", padx=(0, 12), ipady=8)
+        self.photo_canvas.pack(side="left", padx=(0, 12), pady=4)
+        self.photo_canvas.create_text(
+            _PHOTO_SIZE // 2, _PHOTO_SIZE // 2, text="(no photo)", fill="#666"
+        )
+        self.photo_canvas.bind("<Motion>", self._on_photo_motion)
+        self.photo_canvas.bind("<Leave>", self._on_photo_leave)
 
         photo_buttons = ttk.Frame(header)
         photo_buttons.pack(side="left", fill="y")
@@ -102,7 +123,7 @@ class PartDetailView(tk.Toplevel):
             fill="x", pady=2
         )
         self._zoom_button = ttk.Button(
-            photo_buttons, text="Zoom", command=self._open_zoom, state="disabled"
+            photo_buttons, text="Zoom", command=self._toggle_lens, state="disabled"
         )
         self._zoom_button.pack(fill="x", pady=2)
         ttk.Button(photo_buttons, text="Remove photo", command=self.remove_photo).pack(
@@ -234,9 +255,11 @@ class PartDetailView(tk.Toplevel):
 
     def _load_photo(self) -> None:
         self._photo_ref = None
-        self._photo_path = None
+        self._photo_image = None
+        self._lens_enabled = False
         self._zoom_button.configure(state="disabled")
-        self.photo_label.configure(image="", text="(no photo)")
+        self._zoom_button.state(["!pressed"])
+        self._show_photo_placeholder("(no photo)")
         att = self.db.get_attachment(self.part_pk, "photo")
         if not att:
             return
@@ -245,24 +268,100 @@ class PartDetailView(tk.Toplevel):
             return
         try:
             image = Image.open(path)
-            image.thumbnail((240, 240))
-            self._photo_ref = ImageTk.PhotoImage(image)
-            self.photo_label.configure(image=self._photo_ref, text="")
-            self._photo_path = path
+            image.load()
+            full = image.convert("RGBA")
+            thumb = full.copy()
+            thumb.thumbnail((_PHOTO_SIZE, _PHOTO_SIZE))
+            tw, th = thumb.size
+            self._photo_image = full
+            self._photo_ref = ImageTk.PhotoImage(thumb)
+            self._photo_scale = tw / full.width
+            self._photo_offset = ((_PHOTO_SIZE - tw) // 2, (_PHOTO_SIZE - th) // 2)
+            self.photo_canvas.delete("all")
+            self.photo_canvas.create_image(
+                _PHOTO_SIZE // 2, _PHOTO_SIZE // 2, image=self._photo_ref, anchor="center"
+            )
             self._zoom_button.configure(state="normal")
         except Exception:  # noqa: BLE001 - non-image / unreadable
-            self.photo_label.configure(text="(unreadable photo)")
+            self._show_photo_placeholder("(unreadable photo)")
 
-    def _open_zoom(self) -> None:
-        if not self._photo_path:
+    def _show_photo_placeholder(self, text: str) -> None:
+        self.photo_canvas.delete("all")
+        self.photo_canvas.create_text(
+            _PHOTO_SIZE // 2, _PHOTO_SIZE // 2, text=text, fill="#666"
+        )
+
+    # ------------------------------------------------------------------ lens
+
+    def _toggle_lens(self) -> None:
+        if not self._photo_image:
             return
-        try:
-            image = Image.open(self._photo_path)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Photo", f"Could not open photo:\n{exc}")
+        self._lens_enabled = not self._lens_enabled
+        self._zoom_button.state(["pressed"] if self._lens_enabled else ["!pressed"])
+        if not self._lens_enabled:
+            self._hide_lens()
+
+    def _on_photo_motion(self, event: tk.Event) -> None:
+        if not self._lens_enabled or self._photo_image is None:
             return
-        name = self.name_var.get() or f"Part #{self.part_pk}"
-        PhotoViewer(self, image, title=f"{name} — photo")
+        if self._last_lens_pos is not None:
+            if (
+                abs(event.x - self._last_lens_pos[0]) < _LENS_MOVE_THRESHOLD
+                and abs(event.y - self._last_lens_pos[1]) < _LENS_MOVE_THRESHOLD
+            ):
+                return
+        self._last_lens_pos = (event.x, event.y)
+        self._update_lens(event.x, event.y)
+
+    def _on_photo_leave(self, _event: tk.Event) -> None:
+        self._last_lens_pos = None
+        self._hide_lens()
+
+    def _update_lens(self, cx: float, cy: float) -> None:
+        if self._photo_image is None or self._photo_scale <= 0:
+            return
+        ix = int((cx - self._photo_offset[0]) / self._photo_scale)
+        iy = int((cy - self._photo_offset[1]) / self._photo_scale)
+        iw, ih = self._photo_image.size
+        if ix < 0 or iy < 0 or ix >= iw or iy >= ih:
+            self._hide_lens()
+            return
+        self._render_lens(ix, iy, cx, cy)
+
+    def _render_lens(self, ix: int, iy: int, cx: float, cy: float) -> None:
+        crop_w = max(int(_LENS_SIZE / _LENS_MAGNIFY), 1)
+        half = crop_w // 2
+        iw, ih = self._photo_image.size
+        box = (
+            max(ix - half, 0),
+            max(iy - half, 0),
+            min(ix + half, iw),
+            min(iy + half, ih),
+        )
+        crop = self._photo_image.crop(box)
+        cw, ch = crop.size
+        dw = max(int(cw * _LENS_MAGNIFY), 1)
+        dh = max(int(ch * _LENS_MAGNIFY), 1)
+        crop = crop.resize((dw, dh), Image.Resampling.LANCZOS)
+
+        size = _LENS_SIZE
+        lens_img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+        lens_img.paste(crop, ((size - dw) // 2, (size - dh) // 2))
+        lens_img.putalpha(mask)
+        self._lens_photo = ImageTk.PhotoImage(lens_img)
+
+        half_lens = _LENS_SIZE // 2
+        self.photo_canvas.delete("lens")
+        self.photo_canvas.create_image(cx, cy, image=self._lens_photo, tags="lens")
+        self.photo_canvas.create_oval(
+            cx - half_lens, cy - half_lens, cx + half_lens, cy + half_lens,
+            outline="#fff", width=2, tags="lens",
+        )
+
+    def _hide_lens(self) -> None:
+        self.photo_canvas.delete("lens")
 
     def add_photo(self) -> None:
         path = filedialog.askopenfilename(
