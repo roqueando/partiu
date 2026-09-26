@@ -13,6 +13,7 @@ from typing import Any
 from PIL import Image, ImageTk
 
 from ... import pdf_extract
+from ..photo_viewer import PhotoViewer
 from ..widgets import DataTable, FieldSpec, FormDialog
 
 _PIN_COLUMNS = [
@@ -73,6 +74,7 @@ class PartDetailView(tk.Toplevel):
         self.transient(master)
 
         self._photo_ref = None
+        self._photo_path: Path | None = None
         self._info_vars: dict[str, tk.StringVar] = {}
         self._datasheet_label: ttk.Label | None = None
 
@@ -99,6 +101,10 @@ class PartDetailView(tk.Toplevel):
         ttk.Button(photo_buttons, text="Add / change photo", command=self.add_photo).pack(
             fill="x", pady=2
         )
+        self._zoom_button = ttk.Button(
+            photo_buttons, text="Zoom", command=self._open_zoom, state="disabled"
+        )
+        self._zoom_button.pack(fill="x", pady=2)
         ttk.Button(photo_buttons, text="Remove photo", command=self.remove_photo).pack(
             fill="x", pady=2
         )
@@ -228,6 +234,8 @@ class PartDetailView(tk.Toplevel):
 
     def _load_photo(self) -> None:
         self._photo_ref = None
+        self._photo_path = None
+        self._zoom_button.configure(state="disabled")
         self.photo_label.configure(image="", text="(no photo)")
         att = self.db.get_attachment(self.part_pk, "photo")
         if not att:
@@ -240,8 +248,21 @@ class PartDetailView(tk.Toplevel):
             image.thumbnail((240, 240))
             self._photo_ref = ImageTk.PhotoImage(image)
             self.photo_label.configure(image=self._photo_ref, text="")
+            self._photo_path = path
+            self._zoom_button.configure(state="normal")
         except Exception:  # noqa: BLE001 - non-image / unreadable
             self.photo_label.configure(text="(unreadable photo)")
+
+    def _open_zoom(self) -> None:
+        if not self._photo_path:
+            return
+        try:
+            image = Image.open(self._photo_path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Photo", f"Could not open photo:\n{exc}")
+            return
+        name = self.name_var.get() or f"Part #{self.part_pk}"
+        PhotoViewer(self, image, title=f"{name} — photo")
 
     def add_photo(self) -> None:
         path = filedialog.askopenfilename(
