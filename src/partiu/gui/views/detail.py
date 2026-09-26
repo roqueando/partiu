@@ -434,7 +434,11 @@ class PartDetailView(tk.Toplevel):
             return
 
         try:
-            data = pdf_extract.extract(path)
+            data = pdf_extract.extract(
+                path,
+                part_name=self.name_var.get(),
+                part_ipn=self.ipn_var.get(),
+            )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Extraction failed", str(exc))
             return

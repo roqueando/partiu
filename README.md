@@ -18,8 +18,12 @@ Double-click a part (or select it and press **Details**) to open the detail wind
   package/size, the **pinout** table and the **electrical characteristics** table.
   Extracted values are editable.
 
-PDF extraction is heuristic (tuned to the Texas Instruments datasheet format,
-e.g. `tl062.pdf`), so review the extracted pins/parameters after importing.
+PDF extraction is heuristic and header-driven: it recognises pin and electrical
+characteristic tables by their column labels across common datasheet formats
+(Texas Instruments, ST/onsemi, Infineon, …). It is best-effort — review the
+extracted pins/parameters after importing. PDFs that are scanned images (no
+text layer) and pin numbers that exist only inside a graphical pinout diagram
+cannot be extracted.
 
 ## Import components
 
