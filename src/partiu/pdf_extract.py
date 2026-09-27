@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from . import pinout
+
 #: Known manufacturers, detected by case-insensitive substring match.
 MANUFACTURERS = [
     "Texas Instruments",
@@ -579,6 +581,7 @@ def extract(
     part_tokens = _part_tokens(part_name, part_ipn)
     seen_pins: set[tuple[str, str]] = set()
     seen_params: set[tuple[str, str]] = set()
+    seen_pinout: set[tuple[str, str]] = set()
 
     with pdfplumber.open(str(pdf_path)) as pdf:
         full_text = "\n".join((page.extract_text() or "") for page in pdf.pages)
@@ -591,6 +594,7 @@ def extract(
             except Exception:  # noqa: BLE001
                 continue
 
+            found_table = False
             for table in tables:
                 try:
                     rows = [[c or "" for c in row] for row in table.extract()]
@@ -617,14 +621,36 @@ def extract(
                 )
 
                 if is_param:
+                    found_table = True
                     _extract_parameters(
                         rows, param_cm, _section_title(page, table), header_ids,
                         result, seen_params,
                     )
                 elif is_pin:
+                    found_table = True
                     _extract_pins(
                         rows, header_rows, pin_cm, part_tokens, header_ids,
                         result, seen_pins,
                     )
+
+            # Pages without an extractable table may still hold a pinout drawn
+            # as loose text (DIP/SOIC diagram) — parse it geometrically, but
+            # only on pages that actually mention a pinout section (avoids
+            # pairing axis/legend numbers on graph pages).
+            page_text = page.extract_text() or ""
+            if not found_table and pinout.looks_like_pinout(page_text):
+                try:
+                    words = [
+                        (w["text"], w["x0"], w["x1"], w["top"], w["bottom"])
+                        for w in page.extract_words()
+                        if w.get("upright", True)
+                    ]
+                except Exception:  # noqa: BLE001
+                    words = []
+                for pin in pinout.parse_pinout(words):
+                    key = (pin["pin_number"], pin["name"])
+                    if key not in seen_pinout:
+                        seen_pinout.add(key)
+                        result["pins"].append(pin)
 
     return result

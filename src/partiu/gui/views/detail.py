@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -12,7 +13,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ... import pdf_extract
+from ... import ocr_extract, pdf_extract
 from ..widgets import DataTable, FieldSpec, FormDialog
 
 #: Photo thumbnail + magnifier lens sizes.
@@ -433,16 +434,73 @@ class PartDetailView(tk.Toplevel):
         ):
             return
 
+        part_name = self.name_var.get()
+        part_ipn = self.ipn_var.get()
+        threading.Thread(
+            target=self._run_extract, args=(path, part_name, part_ipn), daemon=True
+        ).start()
+
+    def _run_extract(self, path: Path, part_name: str, part_ipn: str) -> None:
+        """Extract in a background thread, then apply on the UI thread."""
         try:
             data = pdf_extract.extract(
-                path,
-                part_name=self.name_var.get(),
-                part_ipn=self.ipn_var.get(),
+                path, part_name=part_name, part_ipn=part_ipn
             )
+            needs_ocr = (
+                not data.get("pins")
+                or not data.get("parameters")
+                or all(
+                    not (p.get("pin_number") or "").strip()
+                    for p in data.get("pins", [])
+                )
+            )
+            if needs_ocr:
+                ocr_data = ocr_extract.extract(
+                    path, part_name=part_name, part_ipn=part_ipn
+                )
+                data = self._merge_extraction(data, ocr_data)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Extraction failed", str(exc))
+            self._safe_after(
+                lambda e=exc: messagebox.showerror("Extraction failed", str(e))
+            )
             return
+        self._safe_after(lambda d=data: self._apply_extraction(d))
 
+    @staticmethod
+    def _merge_extraction(data: dict[str, Any], ocr_data: dict[str, Any]) -> dict[str, Any]:
+        for field in ("manufacturer", "package", "package_size"):
+            if not data.get(field) and ocr_data.get(field):
+                data[field] = ocr_data[field]
+
+        seen_pins = {
+            (p.get("pin_number") or "", p.get("name") or "")
+            for p in data.get("pins", [])
+        }
+        for p in ocr_data.get("pins", []):
+            key = (p.get("pin_number") or "", p.get("name") or "")
+            if key not in seen_pins:
+                seen_pins.add(key)
+                data["pins"].append(p)
+
+        seen_params = {
+            (p.get("name"), p.get("test_conditions"))
+            for p in data.get("parameters", [])
+        }
+        for p in ocr_data.get("parameters", []):
+            key = (p.get("name"), p.get("test_conditions"))
+            if key not in seen_params:
+                seen_params.add(key)
+                data["parameters"].append(p)
+        return data
+
+    def _safe_after(self, fn) -> None:
+        try:
+            if self.winfo_exists():
+                self.after(0, fn)
+        except Exception:  # noqa: BLE001 - window may be closed mid-extraction
+            pass
+
+    def _apply_extraction(self, data: dict[str, Any]) -> None:
         if data.get("manufacturer"):
             self._info_vars["manufacturer"].set(data["manufacturer"])
         if data.get("package"):

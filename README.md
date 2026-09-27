@@ -21,9 +21,16 @@ Double-click a part (or select it and press **Details**) to open the detail wind
 PDF extraction is heuristic and header-driven: it recognises pin and electrical
 characteristic tables by their column labels across common datasheet formats
 (Texas Instruments, ST/onsemi, Infineon, …). It is best-effort — review the
-extracted pins/parameters after importing. PDFs that are scanned images (no
-text layer) and pin numbers that exist only inside a graphical pinout diagram
-cannot be extracted.
+extracted pins/parameters after importing.
+
+When a PDF has **no text layer** (a scan), the app falls back to a **local OCR
+model** (`rapidocr` + `onnxruntime`, PP-OCR ONNX, runs fully offline): pages are
+rendered with `pypdfium2` and the same header-driven extractors run over the
+recognised text. Pin numbers drawn inside a **graphical pinout diagram** (DIP /
+SOIC / logic-diagram style) are recovered by a geometric parser that pairs each
+number with its adjacent pin name — for both text-layer and OCR'd diagrams. The
+OCR fallback runs in the background and can take a minute or more for a long
+scanned datasheet.
 
 ## Import components
 
@@ -99,7 +106,9 @@ poetry run python -m nuitka --standalone --macos-create-app-bundle \
   --file-description="Offline component tracker" --copyright="2026 fabryk industries" \
   --enable-plugin=tk-inter --include-package=PIL --include-package=pdfplumber \
   --include-package=pdfminer --include-package=pypdfium2 --include-package=openpyxl \
+  --include-package=onnxruntime --include-package=rapidocr --include-package=cv2 \
   --include-package-data=pdfminer --include-package-data=pypdfium2 \
+  --include-package-data=rapidocr \
   --assume-yes-for-downloads run.py
 mkdir -p dmg_stage && cp -R "Partiu.app" dmg_stage/ && ln -s /Applications dmg_stage/Applications
 hdiutil create -volname "Partiu" -srcfolder dmg_stage -ov -format UDZO "Partiu.dmg"
@@ -113,7 +122,9 @@ poetry run python -m nuitka --standalone --windows-create-installer \
   --file-description="Offline component tracker" --copyright="2026 fabryk industries" \
   --enable-plugin=tk-inter --include-package=PIL --include-package=pdfplumber \
   --include-package=pdfminer --include-package=pypdfium2 --include-package=openpyxl \
+  --include-package=onnxruntime --include-package=rapidocr --include-package=cv2 \
   --include-package-data=pdfminer --include-package-data=pypdfium2 \
+  --include-package-data=rapidocr \
   --output-filename=Partiu.exe --assume-yes-for-downloads run.py
 ```
 
