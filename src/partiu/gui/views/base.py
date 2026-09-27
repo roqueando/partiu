@@ -22,6 +22,7 @@ class CrudView(ttk.Frame):
 
     title: str = "Items"
     columns: list[tuple[str, str, int]] = []
+    selectmode: str = "browse"
 
     def __init__(self, parent, db, on_status: Callable[[str], None] | None = None):
         super().__init__(parent)
@@ -42,7 +43,10 @@ class CrudView(ttk.Frame):
         self.search_bar = SearchBar(self, on_search=self._on_search)
         self.search_bar.pack(fill="x", padx=8, pady=(0, 4))
 
-        self.table = DataTable(self, columns=self.columns, on_activate=self.open)
+        self.table = DataTable(
+            self, columns=self.columns, on_activate=self.open,
+            selectmode=self.selectmode,
+        )
         self.table.pack(fill="both", expand=True, padx=8, pady=4)
 
         actions = ttk.Frame(self)

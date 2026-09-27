@@ -33,7 +33,7 @@ class FieldSpec:
 class DataTable(ttk.Frame):
     """A labelled Treeview with a scrollbar and an optional empty state."""
 
-    def __init__(self, parent, columns: list[tuple[str, str, int]], on_activate=None):
+    def __init__(self, parent, columns: list[tuple[str, str, int]], on_activate=None, selectmode="browse"):
         """columns: list of (key, heading, width)."""
         super().__init__(parent)
 
@@ -43,7 +43,7 @@ class DataTable(ttk.Frame):
         container.pack(fill="both", expand=True)
 
         self.tree = ttk.Treeview(
-            container, columns=self._column_keys, show="headings", selectmode="browse"
+            container, columns=self._column_keys, show="headings", selectmode=selectmode
         )
         for key, heading, width in columns:
             self.tree.heading(key, text=heading)
@@ -81,6 +81,16 @@ class DataTable(ttk.Frame):
             return int(pk)
         except ValueError:
             return None
+
+    def selected_pks(self) -> list[int]:
+        """Return all selected row pks (in selection order)."""
+        pks: list[int] = []
+        for pk in self.tree.selection():
+            try:
+                pks.append(int(pk))
+            except ValueError:
+                continue
+        return pks
 
     def clear(self) -> None:
         self.tree.delete(*self.tree.get_children())

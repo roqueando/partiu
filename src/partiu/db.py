@@ -388,6 +388,32 @@ class Database:
         self.conn.execute("DELETE FROM stock_item WHERE id = ?", (pk,))
         self.conn.commit()
 
+    def set_stock_items_location(self, pks: list[int], location_id: int | None) -> None:
+        """Bulk-assign a location to many stock items at once."""
+        self.conn.executemany(
+            "UPDATE stock_item SET location_id = ? WHERE id = ?",
+            [(location_id, pk) for pk in pks],
+        )
+        self.conn.commit()
+
+    def create_stock_items_for_all_parts(self) -> int:
+        """Create a stock item (qty 1, status OK) for every part without one.
+
+        Returns the number of items created.
+        """
+        rows = self.conn.execute(
+            "SELECT p.id FROM part p WHERE NOT EXISTS"
+            " (SELECT 1 FROM stock_item s WHERE s.part_id = p.id)"
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                "INSERT INTO stock_item (part_id, quantity, location_id, serial, batch, status)"
+                " VALUES (?, 1, NULL, NULL, NULL, 'OK')",
+                (row["id"],),
+            )
+        self.conn.commit()
+        return len(rows)
+
     # -------------------------------------------------------------- locations
 
     def list_stock_locations(self, search: str | None = None) -> list[dict[str, Any]]:
