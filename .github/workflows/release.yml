@@ -67,8 +67,11 @@ jobs:
             --include-package=pypdfium2 \
             --include-package=openpyxl \
             --include-package=cv2 \
+            --include-package=onnxruntime \
+            --include-package=rapidocr \
             --include-package-data=pdfminer \
             --include-package-data=pypdfium2 \
+            --include-package-data=rapidocr \
             --assume-yes-for-downloads \
             run.py
 
@@ -135,8 +138,11 @@ jobs:
           --include-package=pypdfium2
           --include-package=openpyxl
           --include-package=cv2
+          --include-package=onnxruntime
+          --include-package=rapidocr
           --include-package-data=pdfminer
           --include-package-data=pypdfium2
+          --include-package-data=rapidocr
           --output-filename=Partiu.exe
           --assume-yes-for-downloads
           run.py

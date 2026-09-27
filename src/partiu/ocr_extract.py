@@ -73,7 +73,10 @@ def _norm(value: str) -> str:
 def _get_ocr() -> Any:
     global _ocr_engine
     if _ocr_engine is None:
-        from rapidocr import RapidOCR
+        # Import from ``rapidocr.main`` directly (rather than the lazy
+        # ``from rapidocr import RapidOCR``) so Nuitka statically follows the
+        # import and bundles the OCR engine in packaged builds.
+        from rapidocr.main import RapidOCR
 
         _ocr_engine = RapidOCR(params={"Global.log_level": "error"})
     return _ocr_engine
