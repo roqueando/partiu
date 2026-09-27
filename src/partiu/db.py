@@ -6,6 +6,7 @@ part pins, electrical parameters and file attachments (photo / datasheet).
 
 from __future__ import annotations
 
+import re
 import shutil
 import sqlite3
 import uuid
@@ -88,6 +89,9 @@ STATUSES = [
     "Returned",
 ]
 
+#: Location-token search syntax, e.g. ``GA[A1]`` (drawer) or ``GA[A]`` (cabinet).
+_LOCATION_TOKEN_RE = re.compile(r"GA\[([^\]]+)\]", re.IGNORECASE)
+
 
 def _fmt_qty(value: Any) -> int | float:
     """Return a quantity as int when it is a whole number."""
@@ -137,13 +141,35 @@ class Database:
             FROM part p
         """
         params: list[Any] = []
+        clauses: list[str] = []
+
+        free_text = ""
+        location_labels: list[str] = []
         if search:
-            like = f"%{search}%"
-            query += (
-                " WHERE p.name LIKE ? OR p.ipn LIKE ? OR p.description LIKE ?"
-                " OR p.category LIKE ? OR p.manufacturer LIKE ?"
+            location_labels = [m.strip() for m in _LOCATION_TOKEN_RE.findall(search)]
+            free_text = _LOCATION_TOKEN_RE.sub("", search).strip()
+
+        if free_text:
+            like = f"%{free_text}%"
+            clauses.append(
+                " (p.name LIKE ? OR p.ipn LIKE ? OR p.description LIKE ?"
+                " OR p.category LIKE ? OR p.manufacturer LIKE ?)"
             )
-            params = [like, like, like, like, like]
+            params.extend([like, like, like, like, like])
+
+        if location_labels:
+            location_ids = self._location_ids_for_labels(location_labels)
+            if not location_ids:
+                return []
+            placeholders = ",".join("?" * len(location_ids))
+            clauses.append(
+                "p.id IN (SELECT part_id FROM stock_item"
+                f" WHERE location_id IN ({placeholders}))"
+            )
+            params.extend(sorted(location_ids))
+
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY p.name"
 
         rows = self.conn.execute(query, params).fetchall()
@@ -438,6 +464,48 @@ class Database:
             row["id"]: {"pk": row["id"], "name": row["name"], "parent_id": row["parent_id"]}
             for row in rows
         }
+
+    def _location_ids_for_labels(self, labels: list[str]) -> set[int]:
+        """Resolve ``GA[...]`` labels to stock location ids, plus descendants.
+
+        ``GA[A1]`` matches drawer ``A1``; ``GA[A]`` matches cabinet ``A`` and
+        every drawer under it.
+        """
+        locations = self._location_map()
+        children: dict[int, list[int]] = {}
+        for loc in locations.values():
+            parent = loc.get("parent_id")
+            if parent is not None:
+                children.setdefault(parent, []).append(loc["pk"])
+
+        by_label: dict[str, list[int]] = {}
+        for loc in locations.values():
+            label = self._location_label(locations, loc["pk"]).strip().lower()
+            if label:
+                by_label.setdefault(label, []).append(loc["pk"])
+
+        result: set[int] = set()
+        for raw in labels:
+            key = raw.strip().lower()
+            if not key:
+                continue
+            for pk in by_label.get(key, []):
+                result.add(pk)
+                result.update(self._descendants(children, pk))
+        return result
+
+    @staticmethod
+    def _descendants(children: dict[int, list[int]], pk: int) -> set[int]:
+        """Return ``pk``'s descendant location ids (not including ``pk``)."""
+        result: set[int] = set()
+        stack = list(children.get(pk, []))
+        while stack:
+            current = stack.pop()
+            if current in result:
+                continue
+            result.add(current)
+            stack.extend(children.get(current, []))
+        return result
 
     def create_stock_location(self, data: dict[str, Any]) -> dict[str, Any]:
         cursor = self.conn.execute(

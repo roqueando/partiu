@@ -68,6 +68,15 @@ items to a drawer in **Stock Items**, then search a part name in **Parts** —
 the **Locations** column shows which drawers hold it and how many, e.g.
 `A1 ×3, B2 ×2`.
 
+To list every part stored in a drawer or cabinet, type a `GA[...]` token in the
+**Parts** search box:
+
+- `GA[A1]` — all parts in drawer `A1`.
+- `GA[A]` — all parts in cabinet `A` (i.e. every drawer under it).
+
+You can combine it with free text, e.g. `GA[A1] resistor` narrows to parts
+matching `resistor` in that drawer.
+
 ## Run (development)
 
 ```bash

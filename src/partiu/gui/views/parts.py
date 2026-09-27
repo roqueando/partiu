@@ -17,6 +17,7 @@ class PartsView(CrudView):
     columns = [
         ("name", "Name", 220),
         ("IPN", "IPN", 140),
+        ("manufacturer", "Manufacturer", 160),
         ("category", "Category", 160),
         ("description", "Description", 240),
         ("locations", "Locations", 180),
@@ -31,6 +32,9 @@ class PartsView(CrudView):
             FieldSpec("Category", "category", kind="entry"),
             FieldSpec("Description", "description", kind="entry"),
             FieldSpec("Units", "units", kind="entry"),
+            FieldSpec("Manufacturer", "manufacturer", kind="entry"),
+            FieldSpec("Package", "package", kind="entry"),
+            FieldSpec("Package size", "package_size", kind="entry"),
             FieldSpec("Active", "active", kind="check", default=True),
         ]
 
