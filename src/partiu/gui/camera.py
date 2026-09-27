@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import queue
 import tempfile
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -10,7 +12,9 @@ from tkinter import messagebox, ttk
 import cv2
 from PIL import Image, ImageTk
 
-#: Highest camera index probed when listing devices.
+from .. import config
+
+#: Highest camera index probed when detecting devices.
 _MAX_CAMERAS = 5
 
 #: Preview refresh interval, in milliseconds.
@@ -20,18 +24,53 @@ _POLL_MS = 30
 _PREVIEW_WIDTH = 300
 _PREVIEW_HEIGHT = 200
 
+#: In-memory cache of detected cameras so reopening the dialog is instant.
+_camera_cache: list[tuple[int, str]] | None = None
+
+_settings: config.UserSettings | None = None
+
+
+def _prefs() -> config.UserSettings:
+    global _settings
+    if _settings is None:
+        _settings = config.UserSettings()
+    return _settings
+
+
+def _camera_label(index: int) -> str:
+    return f"Camera {index}"
+
 
 def list_cameras(max_index: int = _MAX_CAMERAS) -> list[tuple[int, str]]:
-    """Return ``[(index, label), ...]`` for every camera that opens."""
+    """Detect cameras and update the cache.
+
+    Cameras are contiguous, so probing stops at the first missing index.
+    """
+    global _camera_cache
     cameras: list[tuple[int, str]] = []
     for index in range(max_index + 1):
         cap = cv2.VideoCapture(index)
         try:
-            if cap.isOpened():
-                cameras.append((index, f"Camera {index}"))
+            opened = cap.isOpened()
         finally:
             cap.release()
+        if opened:
+            cameras.append((index, _camera_label(index)))
+        else:
+            break
+    _camera_cache = cameras
+    _prefs().set("camera_indices", [index for index, _label in cameras])
     return cameras
+
+
+def cached_cameras() -> list[tuple[int, str]] | None:
+    """Return a cached camera list, or ``None`` if nothing is known yet."""
+    if _camera_cache is not None:
+        return list(_camera_cache)
+    indices = _prefs().get("camera_indices")
+    if isinstance(indices, list):
+        return [(int(index), _camera_label(int(index))) for index in indices]
+    return None
 
 
 class CameraCaptureDialog(tk.Toplevel):
@@ -52,11 +91,21 @@ class CameraCaptureDialog(tk.Toplevel):
         self._cap: cv2.VideoCapture | None = None
         self._photo_ref: ImageTk.PhotoImage | None = None
         self._after_id: str | None = None
+        self._detect_queue: queue.Queue = queue.Queue()
+        self._detecting = False
 
         self._build_ui()
-        self._refresh_cameras()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.grab_set()
+
+        # Start instantly from cached/persisted data; otherwise detect in the
+        # background so the UI never freezes during the slow probe.
+        cached = cached_cameras()
+        if cached is not None:
+            self._apply_cameras(cached)
+        else:
+            self._show_detecting()
+            self._detect_cameras_async()
 
     # ------------------------------------------------------------ UI building
 
@@ -99,22 +148,72 @@ class CameraCaptureDialog(tk.Toplevel):
 
     # -------------------------------------------------------------- cameras
 
-    def _refresh_cameras(self) -> None:
-        self._stop_capture()
-        self._cameras = list_cameras()
-        self.camera_box["values"] = [label for _index, label in self._cameras]
-        if not self._cameras:
+    def _show_detecting(self) -> None:
+        self.camera_box["values"] = []
+        self.camera_var.set("")
+        self.preview.delete("all")
+        self.preview.create_text(
+            _PREVIEW_WIDTH // 2,
+            _PREVIEW_HEIGHT // 2,
+            text="Detecting cameras…",
+            fill="#fff",
+        )
+        self.capture_button.configure(state="disabled")
+
+    def _detect_cameras_async(self) -> None:
+        if self._detecting:
+            return
+        self._detecting = True
+
+        def worker() -> None:
+            try:
+                cameras = list_cameras()
+            except Exception:  # noqa: BLE001 - never let the dialog hang
+                cameras = []
+            self._detect_queue.put(cameras)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, self._poll_detect)
+
+    def _poll_detect(self) -> None:
+        if not self.winfo_exists():
+            return
+        try:
+            cameras = self._detect_queue.get_nowait()
+        except queue.Empty:
+            self.after(100, self._poll_detect)
+            return
+        self._detecting = False
+        self._apply_cameras(cameras)
+
+    def _apply_cameras(self, cameras: list[tuple[int, str]]) -> None:
+        self._cameras = cameras
+        self.camera_box["values"] = [label for _index, label in cameras]
+        if not cameras:
             self.camera_var.set("")
             self._show_unavailable()
             return
-        self.camera_box.current(0)
-        self.camera_var.set(self._cameras[0][1])
-        self._start_capture(self._cameras[0][0])
+
+        last = _prefs().get("camera_index")
+        selected = 0
+        for i, (index, _label) in enumerate(cameras):
+            if index == last:
+                selected = i
+                break
+        self.camera_box.current(selected)
+        self.camera_var.set(cameras[selected][1])
+        self._start_capture(cameras[selected][0])
+
+    def _refresh_cameras(self) -> None:
+        self._stop_capture()
+        self._show_detecting()
+        self._detect_cameras_async()
 
     def _on_camera_selected(self, _event=None) -> None:
         label = self.camera_var.get()
         for index, camera_label in self._cameras:
             if camera_label == label:
+                _prefs().set("camera_index", index)
                 self._start_capture(index)
                 return
 
@@ -139,6 +238,8 @@ class CameraCaptureDialog(tk.Toplevel):
             self._cap = None
 
     def _poll(self) -> None:
+        if not self.winfo_exists():
+            return
         cap = self._cap
         if cap is None or not cap.isOpened():
             self._show_unavailable()
