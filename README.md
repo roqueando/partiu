@@ -12,7 +12,9 @@ Track:
 
 Double-click a part (or select it and press **Details**) to open the detail window:
 
-- **Photo** — add/change/remove a component image.
+- **Photo** — add/change/remove a component image, or **take a photo** with a
+  camera: a live-preview window lets you pick which camera to use and capture a
+  frame for that component.
 - **Datasheet** — attach a PDF and open it with the OS viewer.
 - **Extract from datasheet** — parses the attached PDF and fills in manufacturer,
   package/size, the **pinout** table and the **electrical characteristics** table.
@@ -109,6 +111,7 @@ python scripts/make_icons.py all   # gera partiu.ico + partiu.icns
 poetry run python -m nuitka --standalone --macos-create-app-bundle \
   --macos-app-name=Partiu --macos-app-version="0.1.0" \
   --macos-signed-app-name=com.fabrykindustries.partiu --macos-app-icon=partiu.icns \
+  --macos-app-protected-resource="NSCameraUsageDescription:Camera access for capturing component photos." \
   --output-folder-name=Partiu --output-filename=Partiu \
   --company-name="fabryk industries" --product-name="Partiu" \
   --file-version="0.1.0" --product-version="0.1.0" \

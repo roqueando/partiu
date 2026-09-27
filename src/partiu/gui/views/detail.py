@@ -123,6 +123,9 @@ class PartDetailView(tk.Toplevel):
         ttk.Button(photo_buttons, text="Add / change photo", command=self.add_photo).pack(
             fill="x", pady=2
         )
+        ttk.Button(photo_buttons, text="Take photo…", command=self.take_photo).pack(
+            fill="x", pady=2
+        )
         self._zoom_button = ttk.Button(
             photo_buttons, text="Zoom", command=self._toggle_lens, state="disabled"
         )
@@ -375,6 +378,22 @@ class PartDetailView(tk.Toplevel):
         if not path:
             return
         self.db.set_attachment(self.part_pk, "photo", Path(path))
+        self._load_photo()
+
+    def take_photo(self) -> None:
+        from ..camera import CameraCaptureDialog
+
+        dialog = CameraCaptureDialog(self)
+        self.wait_window(dialog)
+        path = dialog.captured_path
+        if path is None:
+            return
+        try:
+            self.db.set_attachment(self.part_pk, "photo", path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Photo", f"Failed to save photo:\n{exc}")
+        finally:
+            path.unlink(missing_ok=True)
         self._load_photo()
 
     def remove_photo(self) -> None:

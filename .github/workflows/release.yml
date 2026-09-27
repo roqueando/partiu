@@ -51,6 +51,7 @@ jobs:
             --macos-app-version="$VERSION" \
             --macos-signed-app-name=com.fabrykindustries.partiu \
             --macos-app-icon=partiu.icns \
+            --macos-app-protected-resource="NSCameraUsageDescription:Camera access for capturing component photos." \
             --output-folder-name=Partiu \
             --output-filename=Partiu \
             --company-name="fabryk industries" \
@@ -65,6 +66,7 @@ jobs:
             --include-package=pdfminer \
             --include-package=pypdfium2 \
             --include-package=openpyxl \
+            --include-package=cv2 \
             --include-package-data=pdfminer \
             --include-package-data=pypdfium2 \
             --assume-yes-for-downloads \
@@ -132,6 +134,7 @@ jobs:
           --include-package=pdfminer
           --include-package=pypdfium2
           --include-package=openpyxl
+          --include-package=cv2
           --include-package-data=pdfminer
           --include-package-data=pypdfium2
           --output-filename=Partiu.exe
