@@ -320,6 +320,7 @@ class Database:
             SELECT s.id AS pk, s.quantity, s.serial, s.batch,
                    s.status AS status_text,
                    s.location_id AS location_id,
+                   s.part_id AS part,
                    p.name AS part_name, p.ipn AS part_ipn,
                    l.name AS location_name
             FROM stock_item s
@@ -348,6 +349,10 @@ class Database:
             item["location_label"] = (
                 self._location_label(locations, location_id) if location_id else ""
             )
+            # Keys used by the create/edit form (part/location/status) so the
+            # comboboxes pre-fill correctly when editing.
+            item["location"] = location_id
+            item["status"] = item.get("status_text")
             result.append(item)
         return result
 
