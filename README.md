@@ -79,6 +79,26 @@ To list every part stored in a drawer or cabinet, type a `GA[...]` token in the
 You can combine it with free text, e.g. `GA[A1] resistor` narrows to parts
 matching `resistor` in that drawer.
 
+## Tools menu
+
+A **Tools** menu (menu bar) hosts engineering tools that connect to the
+inventory. Each tool is registered in `src/partiu/gui/tools/__init__.py`
+(`TOOLS`); the menu is built from that registry, so adding a tool is a single
+registration.
+
+### Flyback DCM calculator
+
+Design a discontinuous-mode flyback converter from its operating parameters
+(`Vin`, `Vin_max`, `Vout`, `Iout`, ripple, efficiency, duty cycle, switching
+frequency). It computes the turns ratio (rounded up, as in the reference
+project), the recalculated duty cycle, primary/secondary inductances and
+currents, MOSFET and diode ratings, and the output capacitor — following the
+equations in `M2A1_FC_Ini_II__ANEXO_1__Projeto.pdf` / `M2A1_calc_flyback.m`.
+
+Every result group has a **Find in inventory** button that opens the Parts
+view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,
+`transformer`), so you can locate stocked components for the design.
+
 ## Run (development)
 
 ```bash

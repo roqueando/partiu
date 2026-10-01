@@ -108,6 +108,12 @@ class PartsView(CrudView):
             )
         return rows
 
+    def set_search(self, text: str) -> None:
+        """Pre-fill the search box and reload, used by Tools' Find in inventory."""
+        self._search = text
+        self.search_bar.var.set(text)
+        self.load()
+
     def create(self, data: dict[str, Any]) -> None:
         self.db.create_part(data)
 

@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .. import APP_NAME, __version__
 from ..paths import get_database_file
+from .tools import TOOLS
 from .views.locations import LocationsView
 from .views.parts import PartsView
 from .views.stock import StockView
@@ -33,6 +34,8 @@ class PartiuApp(tk.Tk):
     # ------------------------------------------------------------ UI building
 
     def _build_ui(self) -> None:
+        self._build_menubar()
+
         container = ttk.Frame(self)
         container.pack(fill="both", expand=True)
 
@@ -72,6 +75,18 @@ class PartiuApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    # --------------------------------------------------------------- menubar
+
+    def _build_menubar(self) -> None:
+        menubar = tk.Menu(self)
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        for tool in TOOLS:
+            tools_menu.add_command(
+                label=tool.label, command=lambda t=tool: self.open_tool(t.id)
+            )
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        self.config(menu=menubar)
+
     # ---------------------------------------------------------------- views
 
     def show_view(self, key: str) -> None:
@@ -97,6 +112,20 @@ class PartiuApp(tk.Tk):
 
     def _set_status(self, message: str) -> None:
         self.status.configure(text=message)
+
+    # ---------------------------------------------------------------- tools
+
+    def open_tool(self, tool_id: str) -> None:
+        for tool in TOOLS:
+            if tool.id == tool_id:
+                tool.launch(self, self.db, self._search_inventory)
+                return
+
+    def _search_inventory(self, term: str) -> None:
+        self.show_view("parts")
+        parts_view = self._views.get("parts")
+        if parts_view is not None:
+            parts_view.set_search(term)
 
     # -------------------------------------------------------------- actions
 
