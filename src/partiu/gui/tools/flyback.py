@@ -7,6 +7,8 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from ...tools.flyback import calculate, defaults
+from ...tools.schematic import flyback_schematic
+from .schematic import SchematicCanvas
 
 #: Suggested free-text terms used by "Find in inventory" (Parts search).
 _SEARCH_TERMS = {
@@ -198,6 +200,12 @@ class FlybackToolDialog(tk.Toplevel):
             row=2, column=0, columnspan=2, sticky="e", pady=(4, 0)
         )
 
+        # ---- schematic (bottom) ----
+        schematic_frame = ttk.LabelFrame(self, text="Esquemático", padding=8)
+        schematic_frame.pack(fill="both", padx=12, pady=(0, 12))
+        self._schematic = SchematicCanvas(schematic_frame, flyback_schematic())
+        self._schematic.pack()
+
     # -------------------------------------------------------------- calculate
 
     def _calculate(self) -> None:
@@ -234,6 +242,16 @@ class FlybackToolDialog(tk.Toplevel):
         for _sec_title, _btn_label, _search_key, fields in _RESULT_SECTIONS:
             for key, _label, unit in fields:
                 self._out_vars[key].set(_fmt(result[key], unit))
+
+        self._schematic.update({
+            "L1": _fmt(result["L1"], "H"),
+            "L2": _fmt(result["L2"], "H"),
+            "n": _fmt(result["n"], None),
+            "C": _fmt(result["C"], "F"),
+            "RL": _fmt(result["RL"], "Ω"),
+            "Vds_max": _fmt(result["Vds_max"], "V"),
+            "VD_max": _fmt(result["VD_max"], "V"),
+        })
 
 
 def launch(master, db, search_inventory: Callable[[str], None] | None = None) -> None:

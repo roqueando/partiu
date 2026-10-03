@@ -95,6 +95,12 @@ project), the recalculated duty cycle, primary/secondary inductances and
 currents, MOSFET and diode ratings, and the output capacitor — following the
 equations in `M2A1_FC_Ini_II__ANEXO_1__Projeto.pdf` / `M2A1_calc_flyback.m`.
 
+A **reference schematic** below the form shows the flyback topology and is
+refreshed with the computed component values every time you press
+**Calculate**: primary/secondary inductances (`L1`, `L2`), turns ratio (`n`),
+output capacitor (`C`), load (`RL`), MOSFET `Vds max` and diode reverse voltage
+(`VD max`).
+
 Every result group has a **Find in inventory** button that opens the Parts
 view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,
 `transformer`), so you can locate stocked components for the design.
