@@ -99,6 +99,17 @@ Every result group has a **Find in inventory** button that opens the Parts
 view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,
 `transformer`), so you can locate stocked components for the design.
 
+### Commercial values (E-Series)
+
+Given any value, find the nearest **commercial E-Series value** (IEC 60063) for
+a resistor, inductor or capacitor. Enter the value with an optional SI prefix
+(`4.7k`, `100n`, `10µ`), pick the component type (Ω / H / F), and choose the
+tolerance (20% … 0.1%) — the E-Series is derived automatically (E6/E12/E24/E48/
+E96/E192), or you can select the series directly. The tool shows the nearest
+value plus the next-lower and next-higher values with their % deviation, and a
+**Find in inventory** button opens the Parts view pre-filtered by component
+category (`resistor`, `inductor`, `capacitor`).
+
 ## Run (development)
 
 ```bash

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from .eseries import launch as eseries_launch
 from .flyback import launch as flyback_launch
 
 
@@ -24,4 +25,9 @@ class Tool:
 
 TOOLS: list[Tool] = [
     Tool(id="flyback_dcm", label="Flyback DCM calculator…", launch=flyback_launch),
+    Tool(
+        id="commercial_values",
+        label="Valores comerciais (commercial values)",
+        launch=eseries_launch,
+    ),
 ]
