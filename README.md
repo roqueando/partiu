@@ -95,7 +95,16 @@ project), the recalculated duty cycle, primary/secondary inductances and
 currents, MOSFET and diode ratings, and the output capacitor — following the
 equations in `M2A1_FC_Ini_II__ANEXO_1__Projeto.pdf` / `M2A1_calc_flyback.m`.
 
-A **reference schematic** was previously included in this tool but has been removed.
+The dialog has two tabs:
+
+1. **Flyback DCM** — the converter calculator above.
+2. **Transformador HF** — high-frequency transformer design based on
+   `M2A2_calc_transf.m`: core area product (`Ae·Aw`) and margin, air gap
+   (total/side), primary/secondary turns (raw and rounded up), wire sizing
+   (required area, parallel conductors, max conductor diameter for skin
+   depth) and a window-area feasibility check (`Exec ≤ 1`). It consumes the
+   converter results (D, Vin, currents, Pin, f, n) from tab 1, so calculate
+   the converter first.
 
 Every result group has a **Find in inventory** button that opens the Parts
 view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,

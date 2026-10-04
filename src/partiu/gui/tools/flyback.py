@@ -1,4 +1,11 @@
-"""Flyback DCM converter calculator dialog (GUI)."""
+"""Flyback DCM converter calculator dialog (GUI).
+
+Tabs:
+
+* **Flyback DCM** — the converter calculator (existing behaviour).
+* **Transformador HF** — high-frequency transformer design based on
+  ``M2A2_calc_transf.m``; consumes the converter results from tab 1.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +14,8 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from ...tools.flyback import calculate, defaults
+from ...tools import transformer as transf
+from ...tools.transformer import design as transf_design
 
 #: Suggested free-text terms used by "Find in inventory" (Parts search).
 _SEARCH_TERMS = {
@@ -81,6 +90,67 @@ _RESULT_SECTIONS = [
     ),
 ]
 
+#: Transformer tab input fields: (key, label, unit) — keys match
+#: :mod:`partiu.tools.transformer` ``DEFAULTS``.
+_TRANSF_INPUT_FIELDS = [
+    ("kw", "Kw (util. janela)", "–"),
+    ("kp", "Kp (util. primário)", "–"),
+    ("jmax", "Jmax (densidade)", "A/cm²"),
+    ("del_b", "DelB (ΔB)", "T"),
+    ("ae", "Ae (seção núcleo)", "cm²"),
+    ("aw", "Aw (janela núcleo)", "cm²"),
+    ("ae_aw_use", "Ae·Aw do núcleo", "cm⁴"),
+    ("aco_iso", "Área fio (com verniz)", "cm²"),
+]
+
+#: Transformer result sections: (title, [(key, label, unit)]).
+#: ``unit``: ``None`` = plain number, ``"int"`` = integer, ``"bool"`` = OK/Não,
+#: ``"%"`` = percentage.
+_TRANSF_RESULT_SECTIONS = [
+    (
+        "Núcleo (Ae·Aw)",
+        [
+            ("AeAw", "Ae·Aw necessário", "cm⁴"),
+            ("AeAw_use", "Ae·Aw do núcleo", "cm⁴"),
+            ("AeAw_margin", "Margem (use/req.)", "x"),
+            ("AeAw_ok", "Núcleo atende?", "bool"),
+        ],
+    ),
+    (
+        "Entreferro & espiras",
+        [
+            ("DelW", "Variação de energia", "J"),
+            ("entreferro", "Entreferro total", "mm"),
+            ("entferr_side", "Entreferro lateral", "mm"),
+            ("B_gauss", "ΔB", "G"),
+            ("N1", "Espiras primário (N1)", "float"),
+            ("N1_int", "N1 (inteiro)", "int"),
+            ("N2", "Espiras secundário (N2)", "float"),
+            ("N2_int", "N2 (inteiro)", "int"),
+        ],
+    ),
+    (
+        "Fiação",
+        [
+            ("Awire1", "Área fio primário", "cm²"),
+            ("N1cond", "Cond. paralelo prim.", "int"),
+            ("Awire2", "Área fio secundário", "cm²"),
+            ("N2cond", "Cond. paralelo sec.", "int"),
+            ("Dia_max", "Diâmetro máx. condutor", "cm"),
+        ],
+    ),
+    (
+        "Verificação de janela",
+        [
+            ("UA1", "Área ocup. primário", "cm²"),
+            ("UA2", "Área ocup. secundário", "cm²"),
+            ("Aw_min", "Área necessária", "cm²"),
+            ("Aw", "Área disponível", "cm²"),
+            ("Exec", "Exec (≤ 1 = OK)", "bool_le"),
+        ],
+    ),
+]
+
 _PREFIXES = [
     (1e-9, "n"),
     (1e-6, "µ"),
@@ -110,8 +180,27 @@ def _fmt(value, unit: str | None) -> str:
     return _fmt_si(value, unit)
 
 
+def _fmt_tf(value, unit: str | None) -> str:
+    """Format a transformer result value.
+
+    ``unit`` is ``None`` (plain), ``"float"``, ``"int"``, ``"bool"`` (OK/Não),
+    ``"bool_le"`` (Exec ≤ 1) or a literal unit string.
+    """
+    if unit is None:
+        return f"{value:.6g}"
+    if unit == "float":
+        return f"{value:.4g}"
+    if unit == "int":
+        return str(int(round(value)))
+    if unit == "bool":
+        return "OK ✓" if value else "Não ✗"
+    if unit == "bool_le":
+        return f"{value:.3f}  {'OK ✓' if value <= 1 else 'Não ✗'}"
+    return f"{value:.4g} {unit}"
+
+
 class FlybackToolDialog(tk.Toplevel):
-    """Modal dialog: inputs on the left, computed results on the right."""
+    """Modal dialog with two tabs: flyback calculator + HF transformer design."""
 
     def __init__(self, master, search_inventory: Callable[[str], None] | None = None):
         super().__init__(master)
@@ -122,6 +211,9 @@ class FlybackToolDialog(tk.Toplevel):
         self._search_inventory = search_inventory or (lambda _term: None)
         self._in_vars: dict[str, tk.StringVar] = {}
         self._out_vars: dict[str, tk.StringVar] = {}
+        self._t_in_vars: dict[str, tk.StringVar] = {}
+        self._t_out_vars: dict[str, tk.StringVar] = {}
+        self._conv_result: dict | None = None
 
         self._build_ui()
         self.grab_set()
@@ -130,11 +222,20 @@ class FlybackToolDialog(tk.Toplevel):
     # ------------------------------------------------------------ UI building
 
     def _build_ui(self) -> None:
-        body = ttk.Frame(self, padding=12)
-        body.pack(fill="both", expand=True)
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True, padx=8, pady=8)
+
+        self._build_calculator_tab(notebook)
+        self._build_transformer_tab(notebook)
+
+    # ---------------------------------------------------------------- tab 1
+
+    def _build_calculator_tab(self, notebook) -> None:
+        tab = ttk.Frame(notebook, padding=12)
+        notebook.add(tab, text="Flyback DCM")
 
         # ---- inputs (left) ----
-        inputs = ttk.LabelFrame(body, text="Parâmetros do conversor", padding=10)
+        inputs = ttk.LabelFrame(tab, text="Parâmetros do conversor", padding=10)
         inputs.pack(side="left", fill="y", padx=(0, 12))
 
         defaults_ = defaults()
@@ -162,7 +263,7 @@ class FlybackToolDialog(tk.Toplevel):
         ).grid(row=len(_INPUT_FIELDS) + 1, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         # ---- results (right) --
-        results = ttk.Frame(body)
+        results = ttk.Frame(tab)
         results.pack(side="left", fill="both", expand=True)
         results.columnconfigure(0, weight=1)
         results.columnconfigure(1, weight=1)
@@ -198,12 +299,88 @@ class FlybackToolDialog(tk.Toplevel):
             row=2, column=0, columnspan=2, sticky="e", pady=(4, 0)
         )
 
-        # ---- schematic (bottom) ----
-        # Schematic rendering removed as requested.
+    # ---------------------------------------------------------------- tab 2
+
+    def _build_transformer_tab(self, notebook) -> None:
+        tab = ttk.Frame(notebook, padding=12)
+        notebook.add(tab, text="Transformador HF")
+
+        # ---- inputs (left) ----
+        inputs = ttk.LabelFrame(tab, text="Parâmetros do transformador", padding=10)
+        inputs.pack(side="left", fill="y", padx=(0, 12))
+
+        t_defaults = transf.defaults()
+        for i, (key, label, unit) in enumerate(_TRANSF_INPUT_FIELDS):
+            ttk.Label(inputs, text=label).grid(
+                row=i, column=0, sticky="w", padx=(0, 8), pady=3
+            )
+            var = tk.StringVar(value=str(t_defaults[key]))
+            ttk.Entry(inputs, textvariable=var, width=10).grid(
+                row=i, column=1, sticky="w", pady=3
+            )
+            ttk.Label(inputs, text=unit).grid(
+                row=i, column=2, sticky="w", padx=(4, 0), pady=3
+            )
+            self._t_in_vars[key] = var
+
+        ttk.Button(inputs, text="Calculate", command=self._calculate).grid(
+            row=len(_TRANSF_INPUT_FIELDS), column=0, columnspan=3,
+            sticky="ew", pady=(8, 0),
+        )
+        ttk.Label(
+            inputs,
+            text=(
+                "Os dados do conversor (D, Vin, IL1_rms,\n"
+                "IL1_max, IL2_rms, Pin, f, n) são os da\n"
+                "tab Flyback DCM — calcule lá primeiro."
+            ),
+            foreground="#777",
+            justify="left",
+        ).grid(
+            row=len(_TRANSF_INPUT_FIELDS) + 1, column=0, columnspan=3,
+            sticky="w", pady=(8, 0),
+        )
+
+        # ---- results (right) --
+        results = ttk.Frame(tab)
+        results.pack(side="left", fill="both", expand=True)
+        results.columnconfigure(0, weight=1)
+        results.columnconfigure(1, weight=1)
+
+        for index, (sec_title, fields) in enumerate(_TRANSF_RESULT_SECTIONS):
+            grid_row, grid_col = divmod(index, 2)
+            frame = ttk.LabelFrame(results, text=sec_title, padding=8)
+            frame.grid(
+                row=grid_row,
+                column=grid_col,
+                sticky="nsew",
+                padx=(0 if grid_col == 0 else 8, 0),
+                pady=(0, 8),
+            )
+
+            for row, (key, label, unit) in enumerate(fields):
+                ttk.Label(frame, text=label).grid(
+                    row=row, column=0, sticky="w", padx=(0, 16), pady=1
+                )
+                var = tk.StringVar(value="")
+                ttk.Label(frame, textvariable=var, font=("", 11, "bold")).grid(
+                    row=row, column=1, sticky="w", pady=1
+                )
+                self._t_out_vars[key] = var
+
+        ttk.Button(results, text="Close", command=self.destroy).grid(
+            row=2, column=0, columnspan=2, sticky="e", pady=(4, 0)
+        )
 
     # -------------------------------------------------------------- calculate
 
     def _calculate(self) -> None:
+        """Recompute the converter (tab 1) and, from it, the transformer (tab 2)."""
+        if not self._calculate_converter():
+            return
+        self._calculate_transformer()
+
+    def _calculate_converter(self) -> bool:
         try:
             vin = float(self._in_vars["vin"].get())
             vin_max = float(self._in_vars["vin_max"].get())
@@ -217,7 +394,7 @@ class FlybackToolDialog(tk.Toplevel):
             messagebox.showerror(
                 "Invalid input", "Todos os campos devem ser numéricos."
             )
-            return
+            return False
 
         try:
             result = calculate(
@@ -232,11 +409,62 @@ class FlybackToolDialog(tk.Toplevel):
             )
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
-            return
+            return False
 
+        self._conv_result = result
         for _sec_title, _btn_label, _search_key, fields in _RESULT_SECTIONS:
             for key, _label, unit in fields:
                 self._out_vars[key].set(_fmt(result[key], unit))
+        return True
+
+    def _calculate_transformer(self) -> None:
+        if self._conv_result is None:
+            return
+
+        try:
+            kw = float(self._t_in_vars["kw"].get())
+            kp = float(self._t_in_vars["kp"].get())
+            jmax = float(self._t_in_vars["jmax"].get())
+            del_b = float(self._t_in_vars["del_b"].get())
+            ae = float(self._t_in_vars["ae"].get())
+            aw = float(self._t_in_vars["aw"].get())
+            ae_aw_use = float(self._t_in_vars["ae_aw_use"].get())
+            aco_iso = float(self._t_in_vars["aco_iso"].get())
+            vin = float(self._in_vars["vin"].get())
+            freq = float(self._in_vars["freq"].get()) * 1000
+        except ValueError:
+            messagebox.showerror(
+                "Invalid input", "Todos os campos do transformador devem ser numéricos."
+            )
+            return
+
+        conv = self._conv_result
+        try:
+            t_result = transf_design(
+                duty=conv["D"],
+                vin=vin,
+                il1_rms=conv["IL1_rms"],
+                il1_max=conv["IL1_max"],
+                il2_rms=conv["IL2_rms"],
+                pin=conv["Pin"],
+                freq=freq,
+                n=conv["n"],
+                kw=kw,
+                kp=kp,
+                jmax=jmax,
+                del_b=del_b,
+                ae=ae,
+                aw=aw,
+                ae_aw_use=ae_aw_use,
+                aco_iso=aco_iso,
+            )
+        except ValueError as exc:
+            messagebox.showerror("Invalid input", str(exc))
+            return
+
+        for _sec_title, fields in _TRANSF_RESULT_SECTIONS:
+            for key, _label, unit in fields:
+                self._t_out_vars[key].set(_fmt_tf(t_result[key], unit))
 
 
 
