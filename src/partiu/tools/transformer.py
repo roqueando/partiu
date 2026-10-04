@@ -31,6 +31,82 @@ from typing import Any
 #: Permeability of free space [H/m].
 U0 = 4 * math.pi * 1e-7
 
+#: Tabela 1 — EE ferrite cores (``M2A2_FC_Ini_II__ANEXO_1__Projeto.pdf``):
+#: ``(name, Ae [cm²], Aw [cm²], Ae·Aw [cm⁴])``.
+EE_CORES: list[tuple[str, float, float, float]] = [
+    ("E 19/8/5", 0.2212, 0.2112, 0.04671),
+    ("E 19/8/6", 0.2696, 0.2574, 0.069395),
+    ("E 20/10/5", 0.31, 0.255, 0.07905),
+    ("E 20", 0.312, 0.26, 0.08112),
+    ("E 30/07", 0.6, 0.8, 0.48),
+    ("E 30/14", 1.2, 0.85, 1.02),
+    ("E 42/15", 1.81, 1.57, 2.8417),
+    ("E 42/20", 2.4, 1.57, 3.768),
+    ("E 55", 3.54, 2.5, 8.85),
+]
+
+#: Tabela 2 — AWG wires (same PDF):
+#: ``(awg, copper dia [cm], copper area [cm²], insulated dia [cm],
+#: insulated area [cm²], Imax [A])``.
+AWG_WIRES: list[tuple[int, float, float, float, float, float]] = [
+    (10, 0.259, 0.052620, 0.273, 0.058572, 23.679),
+    (11, 0.231, 0.041729, 0.244, 0.046738, 18.778),
+    (12, 0.205, 0.033092, 0.218, 0.037309, 14.892),
+    (13, 0.183, 0.026243, 0.195, 0.029793, 11.809),
+    (14, 0.163, 0.020811, 0.174, 0.023800, 9.365),
+    (15, 0.145, 0.016504, 0.156, 0.019021, 7.427),
+    (16, 0.129, 0.013088, 0.139, 0.015207, 5.890),
+    (17, 0.115, 0.010379, 0.124, 0.012164, 4.671),
+    (18, 0.102, 0.008231, 0.111, 0.009735, 3.704),
+    (19, 0.091, 0.006527, 0.100, 0.007794, 2.937),
+    (20, 0.081, 0.005176, 0.089, 0.006244, 2.329),
+    (21, 0.072, 0.004105, 0.080, 0.005004, 1.847),
+    (22, 0.064, 0.003255, 0.071, 0.004013, 1.465),
+    (23, 0.057, 0.002582, 0.064, 0.003221, 1.162),
+    (24, 0.051, 0.002047, 0.057, 0.002586, 0.921),
+    (25, 0.045, 0.001624, 0.051, 0.002078, 0.731),
+    (26, 0.040, 0.001287, 0.046, 0.001671, 0.579),
+    (27, 0.036, 0.001021, 0.041, 0.001344, 0.459),
+    (28, 0.032, 0.000810, 0.037, 0.001083, 0.364),
+    (29, 0.029, 0.000642, 0.033, 0.000872, 0.289),
+    (30, 0.025, 0.000509, 0.030, 0.000704, 0.229),
+    (31, 0.023, 0.000404, 0.027, 0.000568, 0.182),
+    (32, 0.020, 0.000320, 0.024, 0.000459, 0.144),
+    (33, 0.018, 0.000254, 0.022, 0.000371, 0.114),
+    (34, 0.016, 0.000201, 0.020, 0.000300, 0.091),
+    (35, 0.014, 0.000160, 0.018, 0.000243, 0.072),
+    (36, 0.013, 0.000127, 0.016, 0.000197, 0.057),
+    (37, 0.011, 0.000100, 0.014, 0.000160, 0.045),
+    (38, 0.010, 0.000080, 0.013, 0.000130, 0.036),
+    (39, 0.009, 0.000063, 0.012, 0.000106, 0.028),
+    (40, 0.008, 0.000050, 0.010, 0.000086, 0.023),
+    (41, 0.007, 0.000040, 0.009, 0.000070, 0.018),
+]
+
+
+def select_core(ae_aw_req: float) -> tuple[str, float, float, float] | None:
+    """Smallest EE core whose Ae·Aw covers ``ae_aw_req`` (cm⁴).
+
+    Smallest core = least material; returns ``None`` if no table entry fits.
+    """
+    for core in EE_CORES:
+        if core[3] >= ae_aw_req:
+            return core
+    return None
+
+
+def select_wire(dia_max_cm: float) -> tuple[int, float, float, float, float, float] | None:
+    """Thickest AWG wire (lowest gauge number) within the skin-effect limit.
+
+    The reference uses ``dia_max = 15/sqrt(f)`` [cm] as the maximum conductor
+    diameter; the insulated diameter from Tabela 2 must not exceed it.
+    """
+    for wire in AWG_WIRES:
+        if wire[3] <= dia_max_cm:
+            return wire
+    return None
+
+
 #: Default transformer parameters (EE-20/10/5 core, 25 AWG wire).
 DEFAULTS: dict[str, float] = {
     "kw": 0.5,          # window utilization factor

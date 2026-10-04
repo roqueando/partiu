@@ -305,8 +305,12 @@ class FlybackToolDialog(tk.Toplevel):
         tab = ttk.Frame(notebook, padding=12)
         notebook.add(tab, text="Transformador HF")
 
+        # ---- calculations row (inputs left, results right) ----
+        top = ttk.Frame(tab)
+        top.pack(fill="both", expand=True)
+
         # ---- inputs (left) ----
-        inputs = ttk.LabelFrame(tab, text="Parâmetros do transformador", padding=10)
+        inputs = ttk.LabelFrame(top, text="Parâmetros do transformador", padding=10)
         inputs.pack(side="left", fill="y", padx=(0, 12))
 
         t_defaults = transf.defaults()
@@ -342,7 +346,7 @@ class FlybackToolDialog(tk.Toplevel):
         )
 
         # ---- results (right) --
-        results = ttk.Frame(tab)
+        results = ttk.Frame(top)
         results.pack(side="left", fill="both", expand=True)
         results.columnconfigure(0, weight=1)
         results.columnconfigure(1, weight=1)
@@ -372,7 +376,69 @@ class FlybackToolDialog(tk.Toplevel):
             row=2, column=0, columnspan=2, sticky="e", pady=(4, 0)
         )
 
-    # -------------------------------------------------------------- calculate
+        # ---- reference tables (below the calculations) ----
+        tables = ttk.Notebook(tab)
+        tables.pack(fill="both", expand=True, pady=(12, 0))
+
+        cores_frame = ttk.Frame(tables, padding=8)
+        tables.add(cores_frame, text="Tabela 1 — Núcleos EE")
+        self._core_tree = self._build_table(
+            cores_frame,
+            headers=(
+                ("name", "Núcleo", "w"),
+                ("ae", "Ae [cm²]", "e"),
+                ("aw", "Aw [cm²]", "e"),
+                ("aeaw", "Ae·Aw [cm⁴]", "e"),
+            ),
+            rows=[(f"{n}", f"{ae:g}", f"{aw:g}", f"{aeaw:g}")
+                  for n, ae, aw, aeaw in transf.EE_CORES],
+            iids=[str(i) for i in range(len(transf.EE_CORES))],
+        )
+
+        wires_frame = ttk.Frame(tables, padding=8)
+        tables.add(wires_frame, text="Tabela 2 — Fios AWG")
+        self._wire_tree = self._build_table(
+            wires_frame,
+            headers=(
+                ("awg", "AWG", "e"),
+                ("dcu", "Diâm. cobre [cm]", "e"),
+                ("acu", "Área cobre [cm²]", "e"),
+                ("diso", "Diâm. isol. [cm]", "e"),
+                ("aiso", "Área isol. [cm²]", "e"),
+                ("imax", "Imax [A]", "e"),
+            ),
+            rows=[(str(a), f"{dcu:g}", f"{acu:g}", f"{diso:g}", f"{aiso:g}", f"{imax:g}")
+                  for a, dcu, acu, diso, aiso, imax in transf.AWG_WIRES],
+            iids=[str(i) for i in range(len(transf.AWG_WIRES))],
+        )
+
+        self._selection_var = tk.StringVar(value="Selecione Calculate para escolher.")
+        ttk.Label(
+            tab, textvariable=self._selection_var, foreground="#0a7d2f"
+        ).pack(fill="x", pady=(6, 0))
+
+    def _build_table(self, parent, headers, rows, iids):
+        """Create a scrollable Treeview table and return it."""
+        cols = [c[0] for c in headers]
+        tree = ttk.Treeview(parent, columns=cols, show="headings", height=10)
+        for col_id, title, anchor in headers:
+            tree.heading(col_id, text=title)
+            tree.column(col_id, anchor=anchor, width=140 if col_id in ("name", "awg") else 110)
+
+        vsb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+        hsb = ttk.Scrollbar(parent, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        tree.tag_configure("selected", background="#cde8cd", font=("", 10, "bold"))
+
+        for iid, values in zip(iids, rows):
+            tree.insert("", "end", iid=iid, values=values)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        return tree
 
     def _calculate(self) -> None:
         """Recompute the converter (tab 1) and, from it, the transformer (tab 2)."""
@@ -465,6 +531,48 @@ class FlybackToolDialog(tk.Toplevel):
         for _sec_title, fields in _TRANSF_RESULT_SECTIONS:
             for key, _label, unit in fields:
                 self._t_out_vars[key].set(_fmt_tf(t_result[key], unit))
+
+        self._update_tables(t_result, freq)
+
+    # ------------------------------------------------------------- selection
+
+    def _update_tables(self, t_result: dict, freq: float) -> None:
+        """Highlight the recommended core (Tabela 1) and wire (Tabela 2)."""
+        core = transf.select_core(t_result["AeAw"])
+        wire = transf.select_wire(t_result["Dia_max"])
+
+        self._highlight(self._core_tree, None if core is None else transf.EE_CORES.index(core))
+        self._highlight(self._wire_tree, None if wire is None else transf.AWG_WIRES.index(wire))
+
+        parts = []
+        if core is None:
+            parts.append("Nenhum núcleo da Tabela 1 cobre o Ae·Aw necessário")
+        else:
+            parts.append(
+                f"Núcleo selecionado: {core[0]} "
+                f"(Ae·Aw = {core[3]:g} ≥ {t_result['AeAw']:.4g} cm⁴)"
+            )
+        if wire is None:
+            parts.append("nenhum fio da Tabela 2 cabe no limite de skin")
+        else:
+            parts.append(
+                f"Fio selecionado: {wire[0]} AWG "
+                f"(diâm. isol. = {wire[3]:g} cm ≤ {t_result['Dia_max']:.4g} cm)"
+            )
+        self._selection_var.set("   ·   ".join(parts))
+
+    @staticmethod
+    def _highlight(tree: ttk.Treeview, index: int | None) -> None:
+        """Select (and scroll to) row ``index``; clear the selection if ``None``."""
+        for iid in tree.get_children():
+            tree.item(iid, tags=())
+        tree.selection_remove(tree.get_children())
+        if index is None:
+            return
+        iid = str(index)
+        tree.selection_set(iid)
+        tree.item(iid, tags=("selected",))
+        tree.see(iid)
 
 
 

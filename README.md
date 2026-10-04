@@ -106,6 +106,17 @@ The dialog has two tabs:
    converter results (D, Vin, currents, Pin, f, n) from tab 1, so calculate
    the converter first.
 
+   Below the calculations, two reference tables extracted from
+   `M2A2_FC_Ini_II__ANEXO_1__Projeto.pdf` are shown in their own tabs:
+
+   - **Tabela 1 — Núcleos EE** (9 cores with `Ae`, `Aw`, `Ae·Aw`)
+   - **Tabela 2 — Fios AWG** (AWG 10…41: diameters, areas, `Imax`)
+
+   On **Calculate**, the recommended row of each table is selected and
+   highlighted: the *smallest* core whose `Ae·Aw` covers the requirement
+   (least material), and the *thickest* wire whose insulated diameter stays
+   within the skin-effect limit `15/√f`.
+
 Every result group has a **Find in inventory** button that opens the Parts
 view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,
 `transformer`), so you can locate stocked components for the design.
