@@ -102,9 +102,11 @@ The dialog has three tabs:
    `M2A2_calc_transf.m`: core area product (`Ae·Aw`) and margin, air gap
    (total/side), primary/secondary turns (raw and rounded up), wire sizing
    (required area, parallel conductors, max conductor diameter for skin
-   depth) and a window-area feasibility check (`Exec ≤ 1`). It consumes the
-   converter results (D, Vin, currents, Pin, f, n) from tab 1, so calculate
-   the converter first.
+   depth) and a window-area feasibility check (`Exec ≤ 1`). Every
+   **Calculate** re-reads the tab 1 fields first (converter → transformer →
+   assembly), and a **Dados do conversor** frame echoes the values being
+   consumed (`Vin`, `f`, `n`, recalc `D`, `IL1_rms`, `IL1_max`, `IL2_rms`,
+   `Pin`).
 
    Below the calculations, two reference tables extracted from
    `M2A2_FC_Ini_II__ANEXO_1__Projeto.pdf` are shown in their own tabs:
@@ -112,21 +114,25 @@ The dialog has three tabs:
    - **Tabela 1 — Núcleos EE** (9 cores with `Ae`, `Aw`, `Ae·Aw`)
    - **Tabela 2 — Fios AWG** (AWG 10…41: diameters, areas, `Imax`)
 
-   On **Calculate**, the recommended row of each table is selected and
-   highlighted: the *smallest* core whose `Ae·Aw` covers the requirement
-   (least material), and the *thickest* wire whose insulated diameter stays
-   within the skin-effect limit `15/√f`.
+   Clicking (or pressing Enter on) a row **applies it to the inputs** — a
+   core fills `Ae`, `Aw` and `Ae·Aw`, a wire fills the wire area — and the
+   fields stay editable, so a custom value simply clears the highlight.
+   Rows are tagged after each **Calculate**: **green** is the row matching
+   the applied inputs, **blue** is the recommendation (the *smallest* core
+   whose `Ae·Aw` covers the requirement and the *thickest* wire inside the
+   skin-effect limit `15/√f`), with both spelled out in the status line.
 
 3. **Montagem HF** — winding/assembly guide derived from tab 2
-   (`transformer.winding_guide`): for the *recommended* wire (Tabela 2,
-   skin criterion) it computes the primary/secondary **minimum wire area**
-   (`IL_rms/Jmax`), the **parallel conductors to wind** — the larger of the
-   area-based count (the reference method, `ceil(Awire/Aco_iso)`) and the
-   count that keeps each conductor within the wire's `Imax` — plus the
-   occupied areas, the window check and the per-conductor currents. A
-   step-by-step winding list (turns, parallel strands, air gap, window
-   occupancy) is rendered below, with warnings when the strand count grows
-   beyond the area-based one, when the current density is exceeded or when
+   (`transformer.winding_guide`), using the **very same wire and counts** as
+   the design, so `Awire1`/`Awire2`, `N1cond`, `N2cond`, `UA1`/`UA2` and
+   `Exec` match the Transformador HF tab exactly. It shows the minimum wire
+   area (`IL_rms/Jmax`), the parallel conductors, the per-conductor
+   currents, the occupied areas and the checks (window, `Ae·Aw`, skin
+   depth, wire `Imax`) — the Tabela 1/Tabela 2 limits are advisory and
+   never change the counts. The tab also echoes the converter feed and
+   renders a **step-by-step winding list** (turns, parallel strands, air
+   gap, window occupancy) with warnings when the applied core is too small,
+   the wire breaks the skin limit, its `Imax` would ask for more strands or
    the window does not fit.
 
 Every result group has a **Find in inventory** button that opens the Parts

@@ -23,8 +23,11 @@ Outputs: ``AeAw`` in cm⁴, ``entreferro``/``entferr_side`` in mm,
 ``DelW`` in J (everything else is dimensionless).
 
 :func:`winding_guide` builds the assembly guide on top of a ``design()``
-result, sizing the parallel conductors with the *recommended* wire
-(:func:`select_wire`) instead of the ``aco_iso`` design input.
+result using the *same* ``aco_iso`` wire of the design, so every winding
+value (parallel conductors, occupied areas, ``Exec``) matches tab
+"Transformador HF" exactly; the Tabela 2 skin/``Imax`` limits are reported
+as checks only.  :func:`match_core` / :func:`match_wire` map the applied
+inputs back to the reference tables.
 """
 
 from __future__ import annotations
@@ -107,6 +110,24 @@ def select_wire(dia_max_cm: float) -> tuple[int, float, float, float, float, flo
     """
     for wire in AWG_WIRES:
         if wire[3] <= dia_max_cm:
+            return wire
+    return None
+
+
+def match_core(ae: float, aw: float) -> tuple[str, float, float, float] | None:
+    """Tabela 1 entry matching the ``ae``/``aw`` design inputs, else ``None``."""
+    for core in EE_CORES:
+        if math.isclose(core[1], ae, rel_tol=1e-6, abs_tol=1e-12) and math.isclose(
+            core[2], aw, rel_tol=1e-6, abs_tol=1e-12
+        ):
+            return core
+    return None
+
+
+def match_wire(area_iso: float) -> tuple[int, float, float, float, float, float] | None:
+    """Tabela 2 entry whose insulated area matches ``aco_iso``, else ``None``."""
+    for wire in AWG_WIRES:
+        if math.isclose(wire[4], area_iso, rel_tol=1e-6, abs_tol=1e-15):
             return wire
     return None
 
@@ -225,6 +246,7 @@ def design(
         "Aw": aw,
         "Exec": exec_,
         # design inputs (consumed by the assembly guide)
+        "Ae": ae,
         "kw": kw,
         "jmax": jmax,
         "aco_iso": aco_iso,
@@ -236,90 +258,85 @@ def design(
 def winding_guide(res: dict[str, Any]) -> dict[str, Any]:
     """Assembly (bobinagem) guide for the transformer of a ``design()`` run.
 
-    The parallel conductors are sized with the wire recommended by
-    :func:`select_wire` (the thickest one inside the skin-effect limit), not
-    with the ``aco_iso`` design input — so the counts may differ from
-    ``res["N1cond"]``/``res["N2cond"]`` when the recommended wire is not the
-    design one.
+    Every winding value is taken from ``res`` — the wire is the ``aco_iso``
+    design input, so ``N1cond``, ``N2cond``, ``UA1``, ``UA2`` and ``Exec``
+    are **identical** to the "Transformador HF" tab (items must coincide).
+    The Tabela 2 limits are evaluated against that same wire and reported as
+    checks only (never changing the counts):
 
     Returns:
 
-    * ``wire`` — the recommended Tabela 2 entry used for the sizing
-    * ``Awire1``/``Awire2`` — minimum wire area (primary/secondary) [cm²]
-    * ``N1cond``/``N2cond`` — conductors to actually wind: the larger of the
-      area-based count (``*_area``, the reference method, with the raw ratio
-      ``*_raw`` e.g. ``1.903`` ≅ 2) and the count that keeps each conductor
-      within the wire's ``Imax`` (``*_rating``)
-    * ``UA1``/``UA2`` — area taken by each winding (integer turns) [cm²]
-    * ``Aw_min`` — required window area [cm²], ``Exec`` — feasibility (≤ 1)
-    * ``i1_cond``/``i2_cond`` — RMS current carried by each conductor [A]
-    * ``cond_ok`` — whether every conductor stays within the wire's ``Imax``
-    * ``window_ok`` — whether the window still fits (``Exec ≤ 1``)
-
-    Raises ``ValueError`` when no Tabela 2 wire fits the skin-effect limit.
+    * ``wire_awg`` — gauge of the applied wire, or ``None`` when ``aco_iso``
+      is not a Tabela 2 entry (``wire_found`` is then ``False`` and
+      ``wire_dia_iso``/``wire_imax`` are ``None``)
+    * ``skin_ok`` — insulated diameter ≤ ``Dia_max`` (``15/√f``), ``None``
+      when the wire is not in the table
+    * ``cond_ok`` — each conductor within the wire's ``Imax``, ``None`` when
+      the ``Imax`` is unknown
+    * ``N1cond_rating``/``N2cond_rating`` — conductors that *would* respect
+      ``Imax`` (advisory), ``None`` when unknown
+    * ``Awire1``/``Awire2`` — minimum wire area [cm²], ``N1cond``/``N2cond``
+      — parallel conductors, ``N1``/``N2`` — integer turns
+    * ``UA1``/``UA2``/``Aw_min``/``Exec`` — window occupancy, ``window_ok``
+      (``Exec ≤ 1``), ``core_ok`` (``Ae·Aw``), ``core_name`` (``None`` if
+      the core is not a Tabela 1 entry), ``AeAw``/``AeAw_use``/``Dia_max``
+      for the advisory messages
+    * ``i1_cond``/``i2_cond`` — RMS current per conductor [A], ``wire_count``
+      — total strands to cut
     """
-    wire = select_wire(res["Dia_max"])
-    if wire is None:
-        raise ValueError(
-            "nenhum fio da Tabela 2 cabe no limite de skin "
-            f"(Dia_max = {res['Dia_max']:.4g} cm)"
-        )
-    awg, _dia_cu, _area_cu, dia_iso, area_iso, imax = wire
-
-    # ---- wire sizing with the recommended wire (as in the reference PDF) ----
-    awire1 = res["IL1_rms"] / res["jmax"]
-    awire2 = res["IL2_rms"] / res["jmax"]
-    n1cond_raw = awire1 / area_iso
-    n2cond_raw = awire2 / area_iso
-    n1cond_area = math.ceil(n1cond_raw)     # by area (reference method)
-    n2cond_area = math.ceil(n2cond_raw)
-
-    # ---- conductor count also limited by the wire's Imax (Jmax density) ----
-    n1cond_rating = math.ceil(res["IL1_rms"] / imax)
-    n2cond_rating = math.ceil(res["IL2_rms"] / imax)
-    n1cond = max(n1cond_area, n1cond_rating)
-    n2cond = max(n2cond_area, n2cond_rating)
-
-    # ---- window occupancy (integer turns, conductors actually used) ----
-    n1 = res["N1_int"]
-    n2 = res["N2_int"]
-    ua1 = n1 * area_iso * n1cond
-    ua2 = n2 * area_iso * n2cond
-    aw_min = (ua1 + ua2) / res["kw"]
-    exec_ = aw_min / res["Aw"]
-
-    # ---- per-conductor current vs. the wire rating ----
+    area_iso = res["aco_iso"]
+    wire = match_wire(area_iso)
+    n1cond = res["N1cond"]
+    n2cond = res["N2cond"]
     i1_cond = res["IL1_rms"] / n1cond
     i2_cond = res["IL2_rms"] / n2cond
-    cond_ok = i1_cond <= imax and i2_cond <= imax
+
+    if wire is None:
+        awg = dia_iso = imax = None
+        skin_ok = cond_ok = None
+        n1cond_rating = n2cond_rating = None
+    else:
+        awg, _dia_cu, _area_cu, dia_iso, _area_iso, imax = wire
+        skin_ok = dia_iso <= res["Dia_max"]
+        cond_ok = i1_cond <= imax and i2_cond <= imax
+        n1cond_rating = math.ceil(res["IL1_rms"] / imax)
+        n2cond_rating = math.ceil(res["IL2_rms"] / imax)
+
+    core = match_core(res["Ae"], res["Aw"])
 
     return {
         "wire": wire,
+        "wire_found": wire is not None,
         "wire_awg": awg,
         "wire_dia_iso": dia_iso,
         "wire_area_iso": area_iso,
         "wire_imax": imax,
-        "Awire1": awire1,
-        "Awire2": awire2,
-        "N1cond_raw": n1cond_raw,
-        "N1cond_area": n1cond_area,
-        "N1cond_rating": n1cond_rating,
+        "skin_ok": skin_ok,
+        # winding (all straight from the design => tabs coincide)
+        "Awire1": res["Awire1"],
+        "Awire2": res["Awire2"],
+        "N1cond_raw": res["Awire1"] / area_iso,
         "N1cond": n1cond,
-        "N2cond_raw": n2cond_raw,
-        "N2cond_area": n2cond_area,
-        "N2cond_rating": n2cond_rating,
+        "N1cond_rating": n1cond_rating,
+        "N2cond_raw": res["Awire2"] / area_iso,
         "N2cond": n2cond,
-        "N1": n1,
-        "N2": n2,
-        "UA1": ua1,
-        "UA2": ua2,
-        "Aw_min": aw_min,
+        "N2cond_rating": n2cond_rating,
+        "N1": res["N1_int"],
+        "N2": res["N2_int"],
+        "UA1": res["UA1"],
+        "UA2": res["UA2"],
+        "Aw_min": res["Aw_min"],
         "Aw": res["Aw"],
-        "Exec": exec_,
+        "Exec": res["Exec"],
         "i1_cond": i1_cond,
         "i2_cond": i2_cond,
         "cond_ok": cond_ok,
-        "window_ok": exec_ <= 1,
+        "window_ok": res["Exec"] <= 1,
+        "core_ok": res["AeAw_ok"],
+        "core_name": None if core is None else core[0],
+        "AeAw_use": res["AeAw_use"],
+        "AeAw": res["AeAw"],
+        "Dia_max": res["Dia_max"],
         "entreferro": res["entreferro"],
         "entferr_side": res["entferr_side"],
         "wire_count": n1cond + n2cond,
