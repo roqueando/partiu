@@ -5,6 +5,8 @@ Tabs:
 * **Flyback DCM** — the converter calculator (existing behaviour).
 * **Transformador HF** — high-frequency transformer design based on
   ``M2A2_calc_transf.m``; consumes the converter results from tab 1.
+* **Montagem HF** — winding/assembly guide (primary/secondary parallel
+  conductors, minimum wire areas, window occupancy) for the design of tab 2.
 """
 
 from __future__ import annotations
@@ -151,6 +153,61 @@ _TRANSF_RESULT_SECTIONS = [
     ),
 ]
 
+#: Assembly tab (Montagem HF) sections: (title, [(key, label, unit)]).
+#: Values come from :func:`partiu.tools.transformer.winding_guide`.
+#: ``unit``: ``"int"`` = integer, ``"raw"`` = 3 decimals (uncut ratio),
+#: ``"awg"`` = gauge number, ``"bool"`` = OK/Não, ``"bool_le"`` = Exec ≤ 1.
+_ASSEMBLY_SECTIONS = [
+    (
+        "Fio & entreferro",
+        [
+            ("wire_awg", "Fio recomendado", "awg"),
+            ("wire_area_iso", "Área com verniz", "cm²"),
+            ("wire_dia_iso", "Diâm. com verniz", "cm"),
+            ("wire_imax", "Imax do fio", "A"),
+            ("entreferro", "Entreferro total", "mm"),
+            ("entferr_side", "Entreferro lateral", "mm"),
+        ],
+    ),
+    (
+        "Primário (N1)",
+        [
+            ("N1", "Espiras no primário", "int"),
+            ("Awire1", "Área mínima do fio", "cm²"),
+            ("N1cond_raw", "Cond. (sem arredondar)", "raw"),
+            ("N1cond_area", "Cond. pela área", "int"),
+            ("N1cond_rating", "Cond. pela densidade", "int"),
+            ("N1cond", "Condutores a bobinar", "int"),
+            ("i1_cond", "Corrente por condutor", "A"),
+            ("UA1", "Área ocupada", "cm²"),
+        ],
+    ),
+    (
+        "Secundário (N2)",
+        [
+            ("N2", "Espiras no secundário", "int"),
+            ("Awire2", "Área mínima do fio", "cm²"),
+            ("N2cond_raw", "Cond. (sem arredondar)", "raw"),
+            ("N2cond_area", "Cond. pela área", "int"),
+            ("N2cond_rating", "Cond. pela densidade", "int"),
+            ("N2cond", "Condutores a bobinar", "int"),
+            ("i2_cond", "Corrente por condutor", "A"),
+            ("UA2", "Área ocupada", "cm²"),
+        ],
+    ),
+    (
+        "Verificação da montagem",
+        [
+            ("Aw_min", "Área necessária", "cm²"),
+            ("Aw", "Área disponível", "cm²"),
+            ("Exec", "Exec (≤ 1 = OK)", "bool_le"),
+            ("cond_ok", "Densidade de corrente", "bool"),
+            ("window_ok", "Cabe na janela?", "bool"),
+            ("wire_count", "Total de fios", "int"),
+        ],
+    ),
+]
+
 _PREFIXES = [
     (1e-9, "n"),
     (1e-6, "µ"),
@@ -181,9 +238,10 @@ def _fmt(value, unit: str | None) -> str:
 
 
 def _fmt_tf(value, unit: str | None) -> str:
-    """Format a transformer result value.
+    """Format a transformer/assembly result value.
 
-    ``unit`` is ``None`` (plain), ``"float"``, ``"int"``, ``"bool"`` (OK/Não),
+    ``unit`` is ``None`` (plain), ``"float"``, ``"int"``, ``"raw"`` (ratio
+    with 3 decimals), ``"awg"`` (gauge), ``"bool"`` (OK/Não),
     ``"bool_le"`` (Exec ≤ 1) or a literal unit string.
     """
     if unit is None:
@@ -192,6 +250,10 @@ def _fmt_tf(value, unit: str | None) -> str:
         return f"{value:.4g}"
     if unit == "int":
         return str(int(round(value)))
+    if unit == "raw":
+        return f"{value:.3f}"
+    if unit == "awg":
+        return f"{int(round(value))} AWG"
     if unit == "bool":
         return "OK ✓" if value else "Não ✗"
     if unit == "bool_le":
@@ -200,7 +262,7 @@ def _fmt_tf(value, unit: str | None) -> str:
 
 
 class FlybackToolDialog(tk.Toplevel):
-    """Modal dialog with two tabs: flyback calculator + HF transformer design."""
+    """Modal dialog with three tabs: converter, HF transformer, assembly."""
 
     def __init__(self, master, search_inventory: Callable[[str], None] | None = None):
         super().__init__(master)
@@ -213,7 +275,10 @@ class FlybackToolDialog(tk.Toplevel):
         self._out_vars: dict[str, tk.StringVar] = {}
         self._t_in_vars: dict[str, tk.StringVar] = {}
         self._t_out_vars: dict[str, tk.StringVar] = {}
+        self._a_out_vars: dict[str, tk.StringVar] = {}
         self._conv_result: dict | None = None
+        self._t_result: dict | None = None
+        self._guide: dict | None = None
 
         self._build_ui()
         self.grab_set()
@@ -227,6 +292,7 @@ class FlybackToolDialog(tk.Toplevel):
 
         self._build_calculator_tab(notebook)
         self._build_transformer_tab(notebook)
+        self._build_assembly_tab(notebook)
 
     # ---------------------------------------------------------------- tab 1
 
@@ -417,6 +483,74 @@ class FlybackToolDialog(tk.Toplevel):
             tab, textvariable=self._selection_var, foreground="#0a7d2f"
         ).pack(fill="x", pady=(6, 0))
 
+    # ---------------------------------------------------------------- tab 3
+
+    def _build_assembly_tab(self, notebook) -> None:
+        """Winding/assembly guide fed by the transformer design (tab 2)."""
+        tab = ttk.Frame(notebook, padding=12)
+        notebook.add(tab, text="Montagem HF")
+
+        # ---- results grid ----
+        results = ttk.Frame(tab)
+        results.pack(fill="both", expand=True)
+        for col in range(2):
+            results.columnconfigure(col, weight=1)
+
+        for index, (sec_title, fields) in enumerate(_ASSEMBLY_SECTIONS):
+            grid_row, grid_col = divmod(index, 2)
+            frame = ttk.LabelFrame(results, text=sec_title, padding=8)
+            frame.grid(
+                row=grid_row,
+                column=grid_col,
+                sticky="nsew",
+                padx=(0 if grid_col == 0 else 8, 0),
+                pady=(0, 8),
+            )
+
+            for row, (key, label, unit) in enumerate(fields):
+                ttk.Label(frame, text=label).grid(
+                    row=row, column=0, sticky="w", padx=(0, 16), pady=1
+                )
+                var = tk.StringVar(value="")
+                ttk.Label(frame, textvariable=var, font=("", 11, "bold")).grid(
+                    row=row, column=1, sticky="w", pady=1
+                )
+                self._a_out_vars[key] = var
+
+        # ---- step-by-step winding instructions ----
+        guide_frame = ttk.LabelFrame(tab, text="Passo a passo da bobinagem", padding=8)
+        guide_frame.pack(fill="both", expand=True, pady=(4, 0))
+
+        self._guide_text = tk.Text(
+            guide_frame,
+            width=78,
+            height=9,
+            wrap="word",
+            relief="flat",
+            background=self.cget("background"),
+            font=("", 10),
+            state="disabled",
+            cursor="arrow",
+        )
+        self._guide_text.tag_configure("step", lmargin1=18, lmargin2=18, spacing3=3)
+        self._guide_text.tag_configure("warn", foreground="#a33", lmargin1=18, lmargin2=18)
+        self._guide_text.tag_configure("ok", foreground="#0a7d2f", lmargin1=18, lmargin2=18)
+        self._guide_text.pack(fill="both", expand=True)
+
+        footer = ttk.Frame(tab)
+        footer.pack(fill="x", pady=(8, 0))
+        ttk.Label(
+            footer,
+            text=(
+                "Os condutores são dimensionados com o fio selecionado na "
+                "Tabela 2 (limite de skin);\n"
+                "a densidade de corrente é conferida contra o Imax do fio."
+            ),
+            foreground="#777",
+            justify="left",
+        ).pack(side="left")
+        ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
+
     def _build_table(self, parent, headers, rows, iids):
         """Create a scrollable Treeview table and return it."""
         cols = [c[0] for c in headers]
@@ -441,10 +575,12 @@ class FlybackToolDialog(tk.Toplevel):
         return tree
 
     def _calculate(self) -> None:
-        """Recompute the converter (tab 1) and, from it, the transformer (tab 2)."""
+        """Recompute converter (tab 1), transformer (tab 2), assembly (tab 3)."""
         if not self._calculate_converter():
             return
-        self._calculate_transformer()
+        if not self._calculate_transformer():
+            return
+        self._calculate_assembly()
 
     def _calculate_converter(self) -> bool:
         try:
@@ -483,9 +619,9 @@ class FlybackToolDialog(tk.Toplevel):
                 self._out_vars[key].set(_fmt(result[key], unit))
         return True
 
-    def _calculate_transformer(self) -> None:
+    def _calculate_transformer(self) -> bool:
         if self._conv_result is None:
-            return
+            return False
 
         try:
             kw = float(self._t_in_vars["kw"].get())
@@ -502,7 +638,7 @@ class FlybackToolDialog(tk.Toplevel):
             messagebox.showerror(
                 "Invalid input", "Todos os campos do transformador devem ser numéricos."
             )
-            return
+            return False
 
         conv = self._conv_result
         try:
@@ -526,13 +662,113 @@ class FlybackToolDialog(tk.Toplevel):
             )
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
-            return
+            return False
 
         for _sec_title, fields in _TRANSF_RESULT_SECTIONS:
             for key, _label, unit in fields:
                 self._t_out_vars[key].set(_fmt_tf(t_result[key], unit))
 
+        self._t_result = t_result
         self._update_tables(t_result, freq)
+        return True
+
+    # ------------------------------------------------------------- assembly
+
+    def _calculate_assembly(self) -> None:
+        """Fill the Montagem HF tab from the transformer design (tab 2)."""
+        if self._t_result is None:
+            return
+
+        try:
+            guide = transf.winding_guide(self._t_result)
+        except ValueError as exc:
+            for _sec_title, fields in _ASSEMBLY_SECTIONS:
+                for key, _label, _unit in fields:
+                    self._a_out_vars[key].set("—")
+            self._set_guide([("warn", str(exc))])
+            self._guide = None
+            return
+
+        self._guide = guide
+        for _sec_title, fields in _ASSEMBLY_SECTIONS:
+            for key, _label, unit in fields:
+                self._a_out_vars[key].set(_fmt_tf(guide[key], unit))
+        self._set_guide(self._guide_lines(guide))
+
+    def _guide_lines(self, g: dict) -> list[tuple[str, str]]:
+        """Build the step-by-step winding instructions (tag, text) pairs."""
+        awg = g["wire_awg"]
+        n1, n2 = g["N1"], g["N2"]
+        c1, c2 = g["N1cond"], g["N2cond"]
+        lines: list[tuple[str, str]] = [
+            (
+                "step",
+                f"1. Preparar o primário: bobinar {n1} espiras com "
+                f"{c1} fio(s) {awg} AWG em paralelo (torsionados).",
+            ),
+            (
+                "step",
+                f"   Área mínima exigida: {g['Awire1']:.4g} cm² → "
+                f"{c1} × {g['wire_area_iso']:.4g} cm² = {c1 * g['wire_area_iso']:.4g} cm².",
+            ),
+            (
+                "step",
+                f"2. Preparar o secundário: bobinar {n2} espiras com "
+                f"{c2} fio(s) {awg} AWG em paralelo (torsionados).",
+            ),
+            (
+                "step",
+                f"   Área mínima exigida: {g['Awire2']:.4g} cm² → "
+                f"{c2} × {g['wire_area_iso']:.4g} cm² = {c2 * g['wire_area_iso']:.4g} cm².",
+            ),
+            (
+                "step",
+                f"3. Entreferro: {g['entreferro']:.4g} mm no total, "
+                f"{g['entferr_side']:.4g} mm em cada lateral do núcleo.",
+            ),
+            (
+                "step",
+                f"4. Janela: ocupa {g['Aw_min']:.4g} cm² de {g['Aw']:g} cm² "
+                f"(Exec = {g['Exec']:.3f}).",
+            ),
+        ]
+
+        if c1 != g["N1cond_area"] or c2 != g["N2cond_area"]:
+            lines.append(
+                (
+                    "warn",
+                    "⚠ Os condutores acima da contagem por área devem-se ao Imax do "
+                    f"fio {awg} AWG ({g['wire_imax']:g} A por condutor).",
+                )
+            )
+        lines.append(
+            (
+                "ok" if g["cond_ok"] else "warn",
+                f"{'✓' if g['cond_ok'] else '⚠'} Densidade de corrente: "
+                f"{g['i1_cond']:.3f} A (prim.) e {g['i2_cond']:.3f} A (sec.) por condutor, "
+                f"Imax = {g['wire_imax']:g} A.",
+            )
+        )
+        lines.append(
+            (
+                "ok" if g["window_ok"] else "warn",
+                f"{'✓' if g['window_ok'] else '⚠'} "
+                + (
+                    "O transformador cabe na janela do núcleo."
+                    if g["window_ok"]
+                    else "A janela do núcleo NÃO comporta os enrolamentos — use outro núcleo."
+                ),
+            )
+        )
+        return lines
+
+    def _set_guide(self, lines: list[tuple[str, str]]) -> None:
+        """Replace the step-by-step text widget contents."""
+        self._guide_text.configure(state="normal")
+        self._guide_text.delete("1.0", "end")
+        for tag, text in lines:
+            self._guide_text.insert("end", text + "\n", tag)
+        self._guide_text.configure(state="disabled")
 
     # ------------------------------------------------------------- selection
 

@@ -21,6 +21,10 @@ Unit conventions (mirroring the reference script):
 Outputs: ``AeAw`` in cm⁴, ``entreferro``/``entferr_side`` in mm,
 ``B_gauss`` in gauss, wire/window areas in cm², ``Dia_max`` in cm,
 ``DelW`` in J (everything else is dimensionless).
+
+:func:`winding_guide` builds the assembly guide on top of a ``design()``
+result, sizing the parallel conductors with the *recommended* wire
+(:func:`select_wire`) instead of the ``aco_iso`` design input.
 """
 
 from __future__ import annotations
@@ -220,4 +224,104 @@ def design(
         "Aw_min": aw_min,
         "Aw": aw,
         "Exec": exec_,
+        # design inputs (consumed by the assembly guide)
+        "kw": kw,
+        "jmax": jmax,
+        "aco_iso": aco_iso,
+        "IL1_rms": il1_rms,
+        "IL2_rms": il2_rms,
     }
+
+
+def winding_guide(res: dict[str, Any]) -> dict[str, Any]:
+    """Assembly (bobinagem) guide for the transformer of a ``design()`` run.
+
+    The parallel conductors are sized with the wire recommended by
+    :func:`select_wire` (the thickest one inside the skin-effect limit), not
+    with the ``aco_iso`` design input — so the counts may differ from
+    ``res["N1cond"]``/``res["N2cond"]`` when the recommended wire is not the
+    design one.
+
+    Returns:
+
+    * ``wire`` — the recommended Tabela 2 entry used for the sizing
+    * ``Awire1``/``Awire2`` — minimum wire area (primary/secondary) [cm²]
+    * ``N1cond``/``N2cond`` — conductors to actually wind: the larger of the
+      area-based count (``*_area``, the reference method, with the raw ratio
+      ``*_raw`` e.g. ``1.903`` ≅ 2) and the count that keeps each conductor
+      within the wire's ``Imax`` (``*_rating``)
+    * ``UA1``/``UA2`` — area taken by each winding (integer turns) [cm²]
+    * ``Aw_min`` — required window area [cm²], ``Exec`` — feasibility (≤ 1)
+    * ``i1_cond``/``i2_cond`` — RMS current carried by each conductor [A]
+    * ``cond_ok`` — whether every conductor stays within the wire's ``Imax``
+    * ``window_ok`` — whether the window still fits (``Exec ≤ 1``)
+
+    Raises ``ValueError`` when no Tabela 2 wire fits the skin-effect limit.
+    """
+    wire = select_wire(res["Dia_max"])
+    if wire is None:
+        raise ValueError(
+            "nenhum fio da Tabela 2 cabe no limite de skin "
+            f"(Dia_max = {res['Dia_max']:.4g} cm)"
+        )
+    awg, _dia_cu, _area_cu, dia_iso, area_iso, imax = wire
+
+    # ---- wire sizing with the recommended wire (as in the reference PDF) ----
+    awire1 = res["IL1_rms"] / res["jmax"]
+    awire2 = res["IL2_rms"] / res["jmax"]
+    n1cond_raw = awire1 / area_iso
+    n2cond_raw = awire2 / area_iso
+    n1cond_area = math.ceil(n1cond_raw)     # by area (reference method)
+    n2cond_area = math.ceil(n2cond_raw)
+
+    # ---- conductor count also limited by the wire's Imax (Jmax density) ----
+    n1cond_rating = math.ceil(res["IL1_rms"] / imax)
+    n2cond_rating = math.ceil(res["IL2_rms"] / imax)
+    n1cond = max(n1cond_area, n1cond_rating)
+    n2cond = max(n2cond_area, n2cond_rating)
+
+    # ---- window occupancy (integer turns, conductors actually used) ----
+    n1 = res["N1_int"]
+    n2 = res["N2_int"]
+    ua1 = n1 * area_iso * n1cond
+    ua2 = n2 * area_iso * n2cond
+    aw_min = (ua1 + ua2) / res["kw"]
+    exec_ = aw_min / res["Aw"]
+
+    # ---- per-conductor current vs. the wire rating ----
+    i1_cond = res["IL1_rms"] / n1cond
+    i2_cond = res["IL2_rms"] / n2cond
+    cond_ok = i1_cond <= imax and i2_cond <= imax
+
+    return {
+        "wire": wire,
+        "wire_awg": awg,
+        "wire_dia_iso": dia_iso,
+        "wire_area_iso": area_iso,
+        "wire_imax": imax,
+        "Awire1": awire1,
+        "Awire2": awire2,
+        "N1cond_raw": n1cond_raw,
+        "N1cond_area": n1cond_area,
+        "N1cond_rating": n1cond_rating,
+        "N1cond": n1cond,
+        "N2cond_raw": n2cond_raw,
+        "N2cond_area": n2cond_area,
+        "N2cond_rating": n2cond_rating,
+        "N2cond": n2cond,
+        "N1": n1,
+        "N2": n2,
+        "UA1": ua1,
+        "UA2": ua2,
+        "Aw_min": aw_min,
+        "Aw": res["Aw"],
+        "Exec": exec_,
+        "i1_cond": i1_cond,
+        "i2_cond": i2_cond,
+        "cond_ok": cond_ok,
+        "window_ok": exec_ <= 1,
+        "entreferro": res["entreferro"],
+        "entferr_side": res["entferr_side"],
+        "wire_count": n1cond + n2cond,
+    }
+

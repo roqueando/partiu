@@ -95,7 +95,7 @@ project), the recalculated duty cycle, primary/secondary inductances and
 currents, MOSFET and diode ratings, and the output capacitor — following the
 equations in `M2A1_FC_Ini_II__ANEXO_1__Projeto.pdf` / `M2A1_calc_flyback.m`.
 
-The dialog has two tabs:
+The dialog has three tabs:
 
 1. **Flyback DCM** — the converter calculator above.
 2. **Transformador HF** — high-frequency transformer design based on
@@ -116,6 +116,18 @@ The dialog has two tabs:
    highlighted: the *smallest* core whose `Ae·Aw` covers the requirement
    (least material), and the *thickest* wire whose insulated diameter stays
    within the skin-effect limit `15/√f`.
+
+3. **Montagem HF** — winding/assembly guide derived from tab 2
+   (`transformer.winding_guide`): for the *recommended* wire (Tabela 2,
+   skin criterion) it computes the primary/secondary **minimum wire area**
+   (`IL_rms/Jmax`), the **parallel conductors to wind** — the larger of the
+   area-based count (the reference method, `ceil(Awire/Aco_iso)`) and the
+   count that keeps each conductor within the wire's `Imax` — plus the
+   occupied areas, the window check and the per-conductor currents. A
+   step-by-step winding list (turns, parallel strands, air gap, window
+   occupancy) is rendered below, with warnings when the strand count grows
+   beyond the area-based one, when the current density is exceeded or when
+   the window does not fit.
 
 Every result group has a **Find in inventory** button that opens the Parts
 view pre-filtered with a suggested term (e.g. `MOSFET`, `diode`, `capacitor`,
