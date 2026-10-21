@@ -5,19 +5,9 @@ from __future__ import annotations
 from tkinter import messagebox, ttk
 from typing import Any
 
+from ...domain.stock import STATUSES as STOCK_STATUSES
 from ..widgets import FieldSpec, FormDialog
 from .base import CrudView
-
-STOCK_STATUSES = [
-    "OK",
-    "Attention needed",
-    "Damaged",
-    "Destroyed",
-    "Rejected",
-    "Lost",
-    "Quarantined",
-    "Returned",
-]
 
 
 class StockView(CrudView):

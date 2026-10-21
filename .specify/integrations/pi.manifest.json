@@ -1,0 +1,17 @@
+{
+  "integration": "pi",
+  "version": "1.2.2.dev0",
+  "installed_at": "2026-10-20T12:50:54.021886+00:00",
+  "files": {
+    ".pi/prompts/speckit.analyze.md": "b7ac2b1091ccbe51c889aee3d01d1857d3ad686e2b337630df420479ac5f9169",
+    ".pi/prompts/speckit.clarify.md": "669128059b234a855d0b5b75760744238ecb37f770a44603c50a84893aea8709",
+    ".pi/prompts/speckit.constitution.md": "b683235527037be48a745d3c151756abaacb12cbd850b1b4e3439c8db362f9f3",
+    ".pi/prompts/speckit.implement.md": "d440d909605a5dc21de8060522e8d382a21d44ed400d4610ec1f5f3172d5b2b7",
+    ".pi/prompts/speckit.converge.md": "2b83f99f03e622d8806f7c1b9eab5bec395f2cc47780b1c9b29529f14543f934",
+    ".pi/prompts/speckit.plan.md": "5a05bdd44efeb3f63111c8432bb9094fb9d4cc830065ace264c38a90e17ab586",
+    ".pi/prompts/speckit.checklist.md": "295140755e755e152d566d84b63ed4b1bd9486067ddf19ab4c5a6b1deaca57b2",
+    ".pi/prompts/speckit.specify.md": "21634a45dfcf642fddb1645f4ad2980f98c89778442e47663df8a6c3a1eaf8bc",
+    ".pi/prompts/speckit.tasks.md": "2b338a7f1d83b082fab61ee61c5e10d12fe74f8035a79fcf69ccdf6e2302459c",
+    ".pi/prompts/speckit.taskstoissues.md": "412faf28aeda73fbba55a0d5cc6790f5710a6af95254348cd0df510c7c63f1e0"
+  }
+}

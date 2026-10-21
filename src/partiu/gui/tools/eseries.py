@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from ...tools.eseries import (
+from ...domain.engineering.eseries import (
     SERIES_NAMES,
     TOLERANCES,
     nearest,
@@ -214,10 +214,11 @@ class EseriesToolDialog(tk.Toplevel):
         self._search_inventory(term)
 
 
-def launch(master, db, search_inventory: Callable[[str], None] | None = None) -> None:
+def launch(master, db, search_inventory: Callable[[str], None] | None = None, open_part: Callable[[int], None] | None = None) -> None:
     """Open the commercial-values dialog.
 
-    ``db`` is accepted for a uniform tool signature but is unused (the
-    "Find in inventory" action is delegated to ``search_inventory``).
+    ``db`` and ``open_part`` are accepted for a uniform tool signature but are
+    unused (the "Find in inventory" action is delegated to
+    ``search_inventory``).
     """
     EseriesToolDialog(master, search_inventory=search_inventory)

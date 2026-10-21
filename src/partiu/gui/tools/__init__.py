@@ -12,6 +12,7 @@ from typing import Callable
 
 from .eseries import launch as eseries_launch
 from .flyback import launch as flyback_launch
+from .repairs import launch as repairs_launch
 
 
 @dataclass
@@ -30,4 +31,5 @@ TOOLS: list[Tool] = [
         label="Valores comerciais (commercial values)",
         launch=eseries_launch,
     ),
+    Tool(id="repairs", label="Reparos…", launch=repairs_launch),
 ]

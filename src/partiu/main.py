@@ -1,23 +1,23 @@
-"""Application entry point: open the local database and launch the GUI."""
+"""Composition root — the only place that wires concrete adapters to the GUI."""
 
 from __future__ import annotations
 
-from .db import Database
-from .paths import get_data_dir, get_database_file
+from .adapters.persistence import get_data_dir, get_database_file
+from .adapters.sqlite_repository import SqliteRepository
 
 
 def main() -> int:
     """Run the Partiu application."""
     data_dir = get_data_dir()
-    db = Database(get_database_file(data_dir))
+    repository = SqliteRepository(get_database_file(data_dir))
 
     try:
         from .gui.app import PartiuApp
 
-        app = PartiuApp(db=db, data_dir=data_dir)
+        app = PartiuApp(db=repository, data_dir=data_dir)
         app.mainloop()
     finally:
-        db.close()
+        repository.close()
 
     return 0
 

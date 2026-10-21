@@ -86,6 +86,25 @@ inventory. Each tool is registered in `src/partiu/gui/tools/__init__.py`
 (`TOOLS`); the menu is built from that registry, so adding a tool is a single
 registration.
 
+### Reparos
+
+A repair workspace with three tabs, for annotating photos of a board under
+repair and tracking the findings against your inventory:
+
+1. **Análise e reconhecimento** — capture photos from a camera (default or
+   microscope) or import an image file, then place numbered point markers on
+   the image to label traces, CIs, components, etc. Markers can be edited,
+   dragged and removed.
+2. **Tabela de rótulos** — every label across the project's photos in one
+   table, each with a status (**Bom / Ruim / Precisa testar**), a category and
+   optional notes. A finding can be **linked to an inventory part** (search and
+   pick), and **Abrir detalhes** opens that part's detail window in one click.
+3. **…** — placeholder, to be designed later.
+
+Repair projects are saved to the local database (`repair_project`,
+`repair_photo`, `repair_annotation` tables); photos are stored under
+`repairs/<project_id>/` next to the database.
+
 ### Flyback DCM calculator
 
 Design a discontinuous-mode flyback converter from its operating parameters
@@ -159,6 +178,35 @@ Data is stored in a per-user directory:
 Attachments (photos, datasheets) live in `attachments/` next to the database.
 
 Use **Export database…** in the sidebar to copy the database elsewhere.
+
+## Architecture
+
+The code is organized in four Clean Architecture layers under `src/partiu/`,
+with dependencies pointing inward only:
+
+- `domain/` — entities (part, stock item, stock location, repair) and pure
+  engineering calculators (E-series, flyback, transformer, schematic, pinout).
+  Zero third-party imports.
+- `application/` — use cases and the abstract ports (`Protocol` interfaces) they
+  depend on.
+- `adapters/` — concrete implementations of the ports: SQLite repository,
+  PDF/OCR datasheet extractors, spreadsheet importer, camera driver, and
+  config/paths persistence.
+- `gui/` — tkinter presentation (views, widgets, dialogs, tools).
+
+`main.py` is the composition root — the only place that wires concrete adapters
+into the application. The dependency rule is enforced by an automated gate.
+
+## Tests
+
+```bash
+poetry install --with dev
+poetry run pytest            # dependency gate + unit + integration tests
+poetry run pytest tests/unit # fast inner-layer tests (no display/DB/PDF)
+```
+
+The architecture gate (`tests/architecture/`) fails on any inward→outward import
+(e.g. `domain/` importing `gui/`), reporting the file, layer and offending import.
 
 ## Dependencies
 

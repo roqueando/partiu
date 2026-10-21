@@ -6,7 +6,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
-from ... import importer
+from ...adapters import spreadsheet_importer
+from ...application.use_cases.import_parts import import_parts_from_file
 from ..widgets import FieldSpec
 from .base import CrudView
 from .detail import PartDetailView
@@ -72,7 +73,7 @@ class PartsView(CrudView):
         if not path:
             return
         try:
-            result = importer.import_parts_from_file(self.db, Path(path))
+            result = import_parts_from_file(self.db, spreadsheet_importer, Path(path))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror(self.title, f"Import failed:\n{exc}")
             return
@@ -94,7 +95,7 @@ class PartsView(CrudView):
         if not destination:
             return
         try:
-            importer.write_template(Path(destination))
+            spreadsheet_importer.write_template(Path(destination))
         except OSError as exc:
             messagebox.showerror(self.title, f"Could not save template:\n{exc}")
             return

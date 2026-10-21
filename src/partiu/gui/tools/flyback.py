@@ -15,9 +15,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from ...tools.flyback import calculate, defaults
-from ...tools import transformer as transf
-from ...tools.transformer import design as transf_design
+from ...domain.engineering.flyback import calculate, defaults
+from ...domain.engineering import transformer as transf
+from ...domain.engineering.transformer import design as transf_design
 
 #: Suggested free-text terms used by "Find in inventory" (Parts search).
 _SEARCH_TERMS = {
@@ -93,7 +93,7 @@ _RESULT_SECTIONS = [
 ]
 
 #: Transformer tab input fields: (key, label, unit) — keys match
-#: :mod:`partiu.tools.transformer` ``DEFAULTS``.
+#: :mod:`partiu.domain.engineering.transformer` ``DEFAULTS``.
 _TRANSF_INPUT_FIELDS = [
     ("kw", "Kw (util. janela)", "–"),
     ("kp", "Kp (util. primário)", "–"),
@@ -154,7 +154,7 @@ _TRANSF_RESULT_SECTIONS = [
 ]
 
 #: Assembly tab (Montagem HF) sections: (title, [(key, label, unit)]).
-#: Values come from :func:`partiu.tools.transformer.winding_guide`.
+#: Values come from :func:`partiu.domain.engineering.transformer.winding_guide`.
 #: ``unit``: ``"int"`` = integer, ``"raw"`` = 3 decimals (uncut ratio),
 #: ``"awg"`` = gauge number, ``"bool"`` = OK/Não, ``"bool_le"`` = Exec ≤ 1.
 _ASSEMBLY_SECTIONS = [
@@ -813,10 +813,11 @@ class FlybackToolDialog(tk.Toplevel):
 
 
 
-def launch(master, db, search_inventory: Callable[[str], None] | None = None) -> None:
+def launch(master, db, search_inventory: Callable[[str], None] | None = None, open_part: Callable[[int], None] | None = None) -> None:
     """Open the flyback calculator dialog.
 
-    ``db`` is accepted for a uniform tool signature but is unused by this tool
-    (the "Find in inventory" actions are delegated to ``search_inventory``).
+    ``db`` and ``open_part`` are accepted for a uniform tool signature but are
+    unused by this tool (the "Find in inventory" actions are delegated to
+    ``search_inventory``).
     """
     FlybackToolDialog(master, search_inventory=search_inventory)

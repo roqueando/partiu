@@ -8,8 +8,9 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .. import APP_NAME, __version__
-from ..paths import get_database_file
+from ..adapters.persistence import get_database_file
 from .tools import TOOLS
+from .views.detail import PartDetailView
 from .views.locations import LocationsView
 from .views.parts import PartsView
 from .views.stock import StockView
@@ -118,7 +119,7 @@ class PartiuApp(tk.Tk):
     def open_tool(self, tool_id: str) -> None:
         for tool in TOOLS:
             if tool.id == tool_id:
-                tool.launch(self, self.db, self._search_inventory)
+                tool.launch(self, self.db, self._search_inventory, self._open_part)
                 return
 
     def _search_inventory(self, term: str) -> None:
@@ -126,6 +127,10 @@ class PartiuApp(tk.Tk):
         parts_view = self._views.get("parts")
         if parts_view is not None:
             parts_view.set_search(term)
+
+    def _open_part(self, pk: int) -> None:
+        """Open the detail window for an inventory part (used by tools)."""
+        PartDetailView(self, self.db, pk)
 
     # -------------------------------------------------------------- actions
 

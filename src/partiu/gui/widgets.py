@@ -161,6 +161,10 @@ class FormDialog(tk.Toplevel):
                         if str(opt_value) == str(value):
                             var.set(opt_label)
                             break
+            elif spec.kind == "comboedit":
+                var = tk.StringVar(value="" if value is None else str(value))
+                widget = ttk.Combobox(body, textvariable=var, state="normal")
+                widget["values"] = [label for _value, label in spec.options]
             else:  # entry | number
                 var = tk.StringVar(value="" if value is None else str(value))
                 widget = ttk.Entry(body, textvariable=var)
@@ -201,6 +205,8 @@ class FormDialog(tk.Toplevel):
                         value = opt_value
                         break
                 result[spec.key] = value
+            elif spec.kind == "comboedit":
+                result[spec.key] = str(var.get()).strip() or None
             elif spec.kind == "number":
                 raw = str(var.get()).strip()
                 if raw == "":
