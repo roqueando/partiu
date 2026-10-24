@@ -75,12 +75,27 @@ def _read_word(byte_map: dict[int, int], address: int, mask: int) -> int | None:
     return ((hi or 0) << 8 | (lo or 0)) & mask
 
 
+def _read_word_dual(byte_map: dict[int, int], word_address: int, mask: int) -> int | None:
+    """Read a config / device-ID / OSCCAL word, handling both HEX conventions.
+
+    Microchip INHX32 stores words at **2× the word address** (e.g. config word
+    ``0x2007`` → HEX bytes ``0x400E-0x400F``); gputils and some older tools emit
+    the literal word address instead.  Try the official 2× address first, then
+    the literal one.
+    """
+    for address in (word_address * 2, word_address):
+        word = _read_word(byte_map, address, mask)
+        if word is not None:
+            return word
+    return None
+
+
 def build_image(records: list[HexRecord], spec: DeviceSpec) -> PicMemoryImage:
     """Map parsed HEX records onto ``spec``'s regions.
 
     Words are assembled little-endian and masked to ``spec.word_bits``.  Regions
     whose address is absent from the HEX data are left empty (``None`` OSCCAL /
-    device ID).
+    device ID; ``config`` only holds words actually present in the HEX).
     """
     byte_map = records_to_bytes(records)
     mask = spec.word_mask
@@ -90,7 +105,9 @@ def build_image(records: list[HexRecord], spec: DeviceSpec) -> PicMemoryImage:
         for word_index in range(spec.program_words)
     ]
     config = [
-        _read_word(byte_map, addr, mask) or 0 for addr in spec.config_addresses
+        word
+        for addr in spec.config_addresses
+        if (word := _read_word_dual(byte_map, addr, mask)) is not None
     ]
     id_words = [
         byte_map.get(addr, 0xFF) & 0xFF for addr in spec.id_addresses
@@ -101,12 +118,12 @@ def build_image(records: list[HexRecord], spec: DeviceSpec) -> PicMemoryImage:
     ] if spec.eeprom_address is not None else []
 
     osccal = (
-        _read_word(byte_map, spec.osccal_address, mask)
+        _read_word_dual(byte_map, spec.osccal_address, mask)
         if spec.osccal_address is not None
         else None
     )
     device_id = (
-        _read_word(byte_map, spec.device_id_address, mask)
+        _read_word_dual(byte_map, spec.device_id_address, mask)
         if spec.device_id_address is not None
         else None
     )
@@ -143,11 +160,11 @@ def image_to_records(image: PicMemoryImage, spec: DeviceSpec) -> list[HexRecord]
     records.append(HexRecord(DATA, 0x0000, bytes(program)))
 
     for addr, w in zip(spec.config_addresses, image.config):
-        _word(addr, w)
+        _word(addr * 2, w)  # official INHX32: config word at 2× word address
     for addr, w in zip(spec.id_addresses, image.id):
         records.append(HexRecord(DATA, addr, bytes([w & 0xFF])))
     if image.osccal is not None and spec.osccal_address is not None:
-        _word(spec.osccal_address, image.osccal)
+        _word(spec.osccal_address * 2, image.osccal)
     if spec.eeprom_address is not None and image.eeprom:
         records.append(
             HexRecord(DATA, spec.eeprom_address, bytes(b & 0xFF for b in image.eeprom))

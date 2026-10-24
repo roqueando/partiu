@@ -33,14 +33,20 @@ def detect_device(
 ) -> tuple[int, int | None, bool | None]:
     """Return ``(chip_id, expected_id, matches_catalog)``.
 
-    ``matches_catalog`` is ``None`` when the catalog has no expected ID value.
+    Device-ID words embed the silicon revision in their low 5 bits, so the
+    comparison masks those bits (``id >> 5``).  ``matches_catalog`` is ``None``
+    when the catalog has no expected ID value.
     """
     programmer.open()
     try:
         cfg = programmer.read_config()
     finally:
         programmer.close()
-    matched = None if spec.device_id_value is None else cfg.chip_id == spec.device_id_value
+    expected = spec.device_id_value
+    if expected is None:
+        matched = None
+    else:
+        matched = (cfg.chip_id >> 5) == (expected >> 5)
     return cfg.chip_id, spec.device_id_value, matched
 
 
@@ -100,34 +106,45 @@ def program_device(
     image: PicMemoryImage,
     *,
     erase: bool = True,
+    log=None,
 ) -> ProgramReport:
     """Program an image: optional erase, then program / EEPROM / config / calibration."""
     report = ProgramReport()
     mask = spec.word_mask
 
+    def _log(msg: str) -> None:
+        if log is not None:
+            log(msg)
+
     programmer.open()
     try:
         if erase:
+            _log("Apagando o chip…")
             programmer.erase()
 
         words = [w & mask for w in image.program]
+        _log(f"Gravando {len(words)} palavras de programa…")
         programmer.program_program(words)
         report.programmed = len(words)
 
         if spec.eeprom_bytes and image.eeprom:
+            _log(f"Gravando {len(image.eeprom)} bytes de EEPROM…")
             programmer.program_eeprom([b & 0xFF for b in image.eeprom])
 
         if image.config:
             fuses = [w & mask for w in image.config]
             id_words = [w & 0xFF for w in image.id]
+            _log(f"Gravando configuração {', '.join(hex(f) for f in fuses)}…")
             programmer.program_config(id_words, fuses)
             report.config_programmed = len(fuses)
 
         if image.osccal is not None:
             fuse0 = fuses[0] if image.config else 0
+            _log(f"Gravando calibração (OSCCAL) 0x{image.osccal & mask:04X}…")
             programmer.program_calibration(image.osccal & mask, fuse0 & mask)
 
         # Verify what we wrote.
+        _log("Verificando…")
         actual_program = programmer.read_program()
         for addr, (expected, actual) in enumerate(zip(words, actual_program)):
             if expected != (actual & mask):

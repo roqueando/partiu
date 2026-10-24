@@ -135,7 +135,7 @@ class FakeSerial:
             self._emit(bytes(self.eeprom))
         elif byte == 0x0D:                         # read config
             self._emit(b"C" + self._config_payload())
-        elif byte == 0x0F:                         # erase
+        elif byte == self._cmd("erase"):           # erase (15 / 14 on P18A)
             self.rom[:] = b"\xff" * len(self.rom)
             self.fuse = self.word_mask
             self._emit(b"Y")
@@ -144,15 +144,24 @@ class FakeSerial:
         elif byte == 0x08:                         # program EEPROM
             self._collect(2, self._start_prog_eeprom)
         elif byte == 0x09:                         # program ID + fuse
-            self._collect(22, self._finish_prog_idfuse)
+            self._collect(24 if self._is_p18a() else 22, self._finish_prog_idfuse)
         elif byte == 0x0A:                         # program calibration
             self._collect(4, self._finish_prog_cal)
-        elif byte == 0x15:                         # get version
+        elif byte == self._cmd("version"):         # 21 / 20 on P18A
             self._emit(bytes([self.firmware_type]))
-        elif byte == 0x16:                         # get protocol
+        elif byte == self._cmd("protocol"):        # 22 / 21 on P18A
             self._emit(self.protocol)
         else:
             self._emit(b"Q")
+
+    def _cmd(self, name: str) -> int:
+        """Protocol-aware command number (P18A shifted erase/info commands)."""
+        p18a = self.protocol.upper().startswith(b"P18A")
+        return {
+            "erase": 0x0E if p18a else 0x0F,
+            "version": 0x14 if p18a else 0x15,
+            "protocol": 0x15 if p18a else 0x16,
+        }[name]
 
     def _start_prog_rom(self, data: bytes):
         self._prog_count = int.from_bytes(data, "big")
@@ -184,10 +193,13 @@ class FakeSerial:
                 self._emit(b"Y")
 
     def _finish_prog_idfuse(self, data: bytes):
-        # body: '00' (2) + 4 ID bytes + 'FFFF' (4) + fuse lo/hi (2) + 0xFF*10
+        # body: '00' (2) + 4 ID bytes + 'FFFF' (4) + fuse lo/hi (2) + 0xFF * N
         self.id_bytes = data[2:6]
         self.fuse = (data[11] << 8 | data[10]) & self.word_mask
-        self._emit(b"\x00")
+        self._emit(b"Y" if self._is_p18a() else b"\x00")
+
+    def _is_p18a(self) -> bool:
+        return self.protocol.upper().startswith(b"P18A")
 
     def _finish_prog_cal(self, data: bytes):
         self.calibration = ((data[0] << 8 | data[1])) & self.word_mask
@@ -268,6 +280,23 @@ def test_erase_and_blank():
     programmer.close()
 
 
+def test_p18a_erase_uses_command_14():
+    # P18A moved ERASE CHIP from 15 → 14; the fake emulates P18A, so this
+    # fails if the adapter still sends command 15.
+    spec = KITSRUS_DEVICES["PIC16F84A"]
+    fake = FakeSerial(
+        protocol=b"P18A", word_bits=14, program_words=0x400,
+        eeprom_bytes=0x40, chip_id=0x0560,
+    )
+    programmer = KitsrusProgrammer(Connection(fake), spec)
+    programmer.open()
+    assert fake.protocol == b"P18A"
+    programmer.program_program([0x0001] * 0x400)
+    programmer.erase()
+    assert programmer.read_program() == [0x3FFF] * 0x400
+    programmer.close()
+
+
 def test_program_config_and_read_back():
     spec = KITSRUS_DEVICES["PIC16F84A"]
     programmer = _make(spec)
@@ -276,6 +305,23 @@ def test_program_config_and_read_back():
     programmer.program_config([0x01, 0x02, 0x03, 0x04], [0x3F7A])
     cfg = programmer.read_config()
     assert cfg.chip_id == 0x0560
+    assert cfg.fuses[0] == 0x3F7A
+    assert cfg.id_words == [0x01, 0x02, 0x03, 0x04]
+    programmer.close()
+
+
+def test_p18a_program_config_uses_24_byte_body():
+    # P018/P18A command 9: 24-byte body + 'Y' ack (P016 uses 22 bytes + 0x00).
+    spec = KITSRUS_DEVICES["PIC16F84A"]
+    fake = FakeSerial(
+        protocol=b"P18A", word_bits=14, program_words=0x400,
+        eeprom_bytes=0x40, chip_id=0x0560,
+    )
+    programmer = KitsrusProgrammer(Connection(fake), spec)
+    programmer.open()
+
+    programmer.program_config([0x01, 0x02, 0x03, 0x04], [0x3F7A])
+    cfg = programmer.read_config()
     assert cfg.fuses[0] == 0x3F7A
     assert cfg.id_words == [0x01, 0x02, 0x03, 0x04]
     programmer.close()

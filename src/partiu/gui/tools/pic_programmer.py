@@ -195,6 +195,14 @@ class PicProgrammerDialog(tk.Toplevel):
         self._set_busy(True)
         self._log(f"— {label}…")
 
+        # Reset the on-board firmware before each operation so a previous
+        # error can never leave the programmer in a half-consumed state.
+        if self._connection is not None:
+            try:
+                self._connection.reset()
+            except Exception as exc:  # noqa: BLE001
+                self._log(f"Aviso: reset do firmware falhou ({exc}).")
+
         def worker() -> None:
             try:
                 result = operation(log=lambda m: self._events.put(("log", m)))
@@ -248,8 +256,8 @@ class PicProgrammerDialog(tk.Toplevel):
             return
         try:
             conn = Connection.open_port(port)
-            version = conn.get_version()
-            protocol = conn.get_protocol().decode("ascii", errors="ignore")
+            protocol = conn.detect().decode("ascii", errors="ignore")
+            version = conn.firmware_type
             self._connection = conn
             self._status_var.set(f"Conectado — {protocol} (firmware type {version})")
             self._log(f"Conectado em {port}: protocolo {protocol}, firmware type {version} (K150=3).")
@@ -364,7 +372,7 @@ class PicProgrammerDialog(tk.Toplevel):
             raise ProgrammerError("Carregue um arquivo HEX antes de gravar.")
         programmer, spec = self._get_programmer()
         report = uc.program_device(
-            programmer, spec.device, self._image, erase=self._erase_var.get()
+            programmer, spec.device, self._image, erase=self._erase_var.get(), log=log
         )
         lines = [f"Gravadas {report.programmed} palavras + {report.config_programmed} config."]
         if report.verified:

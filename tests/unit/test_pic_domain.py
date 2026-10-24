@@ -148,6 +148,25 @@ def test_build_image_maps_regions_and_masks():
     assert image.osccal == 0x3484
 
 
+def test_build_image_config_at_doubled_address():
+    # MPLAB X / INHX32 stores the config word at 2× the word address.
+    spec = _spec(program_words=1)
+    records = [
+        HexRecord(hexfile.DATA, 0x0000, bytes([0xAA, 0x2A])),  # program
+        HexRecord(hexfile.DATA, 0x400E, bytes([0xFF, 0x31])),  # config 0x2007 × 2
+    ]
+    image = build_image(records, spec)
+    assert image.config == [0x31FF]
+    assert image.program == [0x2AAA]
+
+
+def test_build_image_no_config_is_empty():
+    spec = _spec(program_words=1)
+    records = [HexRecord(hexfile.DATA, 0x0000, bytes([0xAA, 0x2A]))]
+    image = build_image(records, spec)
+    assert image.config == []  # absent config → empty, not a fake 0x0000
+
+
 def test_build_image_masks_to_word_bits():
     spec = _spec(program_words=1)
     records = [HexRecord(hexfile.DATA, 0x0000, bytes([0xFF, 0xFF]))]

@@ -90,6 +90,15 @@ def test_detect_device_matches_catalog():
     assert matched is True
 
 
+def test_detect_device_masks_revision_bits():
+    # 0x0F8B vs 0x0F80 differ only in the low (revision) bits.
+    spec = _spec(device_id_value=0x0F80)
+    programmer = FakePicProgrammer(spec)
+    programmer.chip_id = 0x0F8B
+    _, _, matched = uc.detect_device(programmer, spec)
+    assert matched is True
+
+
 def test_detect_device_no_expected_id():
     spec = _spec(device_id_value=None)
     programmer = FakePicProgrammer(spec)

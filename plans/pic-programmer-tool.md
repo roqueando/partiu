@@ -32,7 +32,18 @@ programmer. It has a **PIC16F628 running firmware** plus an FTDI USB-serial chip
 Protocol versions **P014 / P016 / P018 / P18A** differ mainly in the **core-type
 numbering**: P014/P016 know cores 0-10; **P018/P18A add 11 (16F57/16F54/16F59)
 and 12 (10Fxxx)**. So **PIC10F2xx and PIC16F5x need P018/P18A firmware** — the
-adapter detects the protocol via command 22 and errors clearly on old firmware.
+adapter detects the protocol via command 22/21 and errors clearly on old firmware.
+
+> **P18A also renumbered the info/erase commands** (the core 3-13 commands are
+> unchanged): **erase chip is 14** (was 15), **get version is 20** (was 21),
+> **get protocol is 21** (was 22). The adapter probes command 21 to tell P18A
+> (4-byte `P18A` reply) from older firmware (1-byte version reply), then uses
+> the right command numbers.
+>
+> **P018/P18A also changed PROGRAM ID FUSES (command 9):** the body is **24
+> bytes (12× 0xFF)** and the ack is **`'Y'`**; P014/P016 use a 22-byte body
+> (10× 0xFF) and ack `0x00`. The adapter picks the format from the detected
+> protocol.
 
 Reference implementations: `almost/picprogrammer` (P014) and `Salamek/picpro`
 (P18A). Wire format and per-device core types are factual protocol parameters.
@@ -80,7 +91,7 @@ Reference implementations: `almost/picprogrammer` (P014) and `Salamek/picpro`
 - **program_device** — optional erase → program ROM → EEPROM → ID+config →
   calibration → verify (bounded retry is handled by the firmware).
 - **verify_device** — compare device contents against a loaded image.
-- **erase_device** — bulk erase (firmware command 15).
+- **erase_device** — bulk erase (firmware command 14/15, protocol-dependent).
 
 ## Files (current state)
 
@@ -110,7 +121,7 @@ Reference implementations: `almost/picprogrammer` (P014) and `Salamek/picpro`
 
 | Risk | Mitigation |
 |------|------------|
-| Firmware is P016 (no PIC10F/16F5x cores) | cmd-22 detection + clear "upgrade firmware" error; docs explain P018/P18A |
+| Firmware is P016 (no PIC10F/16F5x cores) | protocol detection (cmd 21 probe) + clear "upgrade firmware" error; docs explain P018/P18A |
 | Core-type numbering differs across protocol versions | Catalog stores the name; single mapping + per-protocol capability check |
 | Device metadata (chip ID, OSCCAL, delays) off by one device | Seed catalog marked as reference data; detect_device reports the raw ID |
 | Windows COM latency / drivers | FTDI VCP driver required; operations are block-oriented (firmware-paced), not bit-bang |

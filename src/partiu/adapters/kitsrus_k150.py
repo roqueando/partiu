@@ -46,6 +46,12 @@ CMD_PROGRAM_18F_FUSE = 0x12
 CMD_GET_VERSION = 0x15
 CMD_GET_PROTOCOL = 0x16
 
+# P18A renumbered the info/erase commands (14 = erase, 20 = version,
+# 21 = protocol).  The core programming commands 3-13 are unchanged.
+CMD_ERASE_P18A = 0x0E
+CMD_GET_VERSION_P18A = 0x14
+CMD_GET_PROTOCOL_P18A = 0x15
+
 # Response bytes.
 RSP_BANNER = b"B"   # power-up: 'B' + firmware type
 RSP_WAIT = b"Q"     # at "wait for command start"
@@ -100,10 +106,17 @@ class Connection:
         self._sp.write(data)
 
     def read(self, count: int = 1, timeout: float | None = None) -> bytes:
-        """Read ``count`` bytes, polling until satisfied or the timeout elapses."""
+        """Read ``count`` bytes, polling until satisfied or the timeout elapses.
+
+        ``timeout`` defaults to 5 s so a firmware that goes silent can never
+        hang the caller forever (callers that legitimately need longer pass an
+        explicit timeout).
+        """
+        if timeout is None:
+            timeout = 5.0
+        deadline = time.time() + timeout
         result = b""
-        deadline = None if timeout is None else time.time() + timeout
-        while count > 0 and (deadline is None or time.time() < deadline):
+        while count > 0 and time.time() < deadline:
             chunk = self._sp.read(count)
             count -= len(chunk)
             result += chunk
@@ -149,26 +162,52 @@ class Connection:
 
     # -- info commands -------------------------------------------------------
 
-    def get_version(self) -> int:
-        """Firmware type byte (K128=0, K149-A=1, K149-B=2, K150=3)."""
-        self.command_start(CMD_GET_VERSION)
-        response = self.read(1)
-        self.command_end()
-        return response[0]
+    def detect(self) -> bytes:
+        """Detect the firmware protocol (P014/P016/P018 → P18A) and version.
 
-    def get_protocol(self) -> bytes:
-        """Protocol string, e.g. ``b'P016'`` / ``b'P18A'``."""
-        self.command_start(CMD_GET_PROTOCOL)
-        response = self.read(4)
-        self.command_end()
-        self.protocol = response
-        return response
+        P18A renumbered the info commands (get-version is 20, get-protocol is
+        21); older firmware uses 21/22.  Probe command 21: P18A answers with
+        the 4-byte protocol string, older firmware answers with the 1-byte
+        version number.
+        """
+        self.command_start(CMD_GET_PROTOCOL_P18A)  # 21
+        response = self.read(4, timeout=0.4)
+        if len(response) == 4 and response[:1] == b"P":
+            self.command_end()
+            self.protocol = response
+            self.command_start(CMD_GET_VERSION_P18A)  # 20
+            version = self.read(1)
+            self.command_end()
+            if version:
+                self.firmware_type = version[0]
+        elif response and response[0] in (0, 1, 2, 3):
+            self.command_end()
+            self.firmware_type = response[0]
+            self.command_start(CMD_GET_PROTOCOL)  # 22
+            protocol = self.read(4, timeout=0.4)
+            self.command_end()
+            self.protocol = protocol or b"P016"
+        else:
+            self.command_end()
+            raise ProtocolError(f"unable to detect programmer protocol (got {response!r})")
+        return self.protocol
 
     def close(self) -> None:
         try:
             self._sp.close()
         except Exception:
             pass
+
+
+def _is_p18a(protocol: bytes) -> bool:
+    return protocol.decode("ascii", errors="ignore").upper() == "P18A"
+
+
+def _uses_new_fuse_format(protocol: bytes) -> bool:
+    """P018/P18A changed PROGRAM ID FUSES (cmd 9): 24-byte body + 'Y' ack
+    (P014/P016 use a 22-byte body + 0x00 ack)."""
+    text = protocol.decode("ascii", errors="ignore").upper().lstrip("P")
+    return text in ("018", "18A")
 
 
 def _protocol_supports_core(protocol: bytes, core_type: int) -> bool:
@@ -201,11 +240,12 @@ class KitsrusProgrammer:
         self._conn = connection
         self._spec = spec
         self._opened = False
+        self._op = "idle"
 
     # -- PicProgrammer port --------------------------------------------------
 
     def open(self) -> None:
-        protocol = self._conn.protocol or self._conn.get_protocol()
+        protocol = self._conn.protocol or self._conn.detect()
         if self._spec.core_type in P018_ONLY_CORES and not _protocol_supports_core(
             protocol, self._spec.core_type
         ):
@@ -223,6 +263,7 @@ class KitsrusProgrammer:
         self._opened = False
 
     def read_program(self) -> list[int]:
+        self._op = "ler ROM"
         mask = self._spec.device.word_mask
         self._conn.command_start()
         self._voltage(True)
@@ -236,6 +277,7 @@ class KitsrusProgrammer:
         ]
 
     def read_eeprom(self) -> list[int]:
+        self._op = "ler EEPROM"
         size = self._spec.device.eeprom_bytes
         if not size:
             return []
@@ -248,6 +290,7 @@ class KitsrusProgrammer:
         return list(data)
 
     def read_config(self) -> DeviceConfig:
+        self._op = "ler configuração"
         self._conn.command_start()
         self._voltage(True)
         self._conn.write(bytes([CMD_READ_CONFIG]))
@@ -260,16 +303,23 @@ class KitsrusProgrammer:
         return _parse_config(data, self._spec.device.word_mask)
 
     def erase(self) -> None:
+        self._op = "apagar chip"
         self._conn.command_start()
         self._voltage(True)
-        self._conn.write(bytes([CMD_ERASE]))
+        self._conn.write(bytes([self._erase_command()]))
         response = self._conn.read(1)
         self._voltage(False)
         self._conn.command_end()
         if response != RSP_YES:
             raise ProgrammerError(f"erase failed (got {response!r})")
 
+    def _erase_command(self) -> int:
+        # P18A moved ERASE CHIP from 15 → 14.
+        protocol = self._conn.protocol or b"P016"
+        return CMD_ERASE_P18A if _is_p18a(protocol) else CMD_ERASE
+
     def program_program(self, words: list[int]) -> None:
+        self._op = "gravar ROM"
         mask = self._spec.device.word_mask
         data = b"".join((w & mask).to_bytes(2, "big") for w in words)
         if len(data) % 32 != 0:
@@ -305,6 +355,7 @@ class KitsrusProgrammer:
         self._conn.command_end()
 
     def program_eeprom(self, data: list[int]) -> None:
+        self._op = "gravar EEPROM"
         payload = bytes(b & 0xFF for b in data)
         if len(payload) % 2 != 0:
             raise ValueError("EEPROM data must be a multiple of 2 bytes")
@@ -324,11 +375,19 @@ class KitsrusProgrammer:
         self._conn.command_end()
 
     def program_config(self, id_words: list[int], fuses: list[int]) -> None:
+        self._op = "gravar ID+fuses"
         if not fuses:
             return
-        # 12/14-bit path: '00' + 4 ID bytes + 'FFFF' + fuse lo/hi + 10 × 0xFF.
+        # 12/14-bit path: '00' + 4 ID bytes + 'FFFF' + fuse lo/hi + trailing 0xFF.
+        # P014/P016 use 10 × 0xFF and ack 0x00; P018/P18A use 12 × 0xFF and ack 'Y'.
+        protocol = self._conn.protocol or b"P016"
         id_bytes = bytes(w & 0xFF for w in id_words[:4]).ljust(4, b"\xff")
-        body = b"00" + id_bytes + b"FFFF" + struct.pack("<H", fuses[0]) + b"\xff" * 10
+        if _uses_new_fuse_format(protocol):
+            body = b"00" + id_bytes + b"FFFF" + struct.pack("<H", fuses[0]) + b"\xff" * 12
+            ok = RSP_YES
+        else:
+            body = b"00" + id_bytes + b"FFFF" + struct.pack("<H", fuses[0]) + b"\xff" * 10
+            ok = b"\x00"
 
         self._conn.command_start()
         self._voltage(True)
@@ -337,10 +396,11 @@ class KitsrusProgrammer:
         response = self._conn.read(1, timeout=20)
         self._voltage(False)
         self._conn.command_end()
-        if response != b"\x00":
+        if response != ok:
             raise ProgrammerError(f"program ID/fuses failed (got {response!r})")
 
     def program_calibration(self, cal: int, fuse: int) -> None:
+        self._op = "gravar calibração"
         body = (cal & 0xFFFF).to_bytes(2, "big") + (fuse & 0xFFFF).to_bytes(2, "big")
         self._conn.command_start()
         self._voltage(True)
@@ -361,4 +421,7 @@ class KitsrusProgrammer:
 
     def _voltage(self, on: bool) -> None:
         self._conn.write(bytes([CMD_VPP_ON if on else CMD_VPP_OFF]))
-        self._conn.expect(RSP_V_ON if on else RSP_V_OFF)
+        try:
+            self._conn.expect(RSP_V_ON if on else RSP_V_OFF)
+        except ProtocolError as exc:
+            raise ProtocolError(f"[{self._op}] {exc}") from exc
