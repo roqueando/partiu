@@ -163,6 +163,31 @@ value plus the next-lower and next-higher values with their % deviation, and a
 **Find in inventory** button opens the Parts view pre-filtered by component
 category (`resistor`, `inductor`, `capacitor`).
 
+### Programador PIC10/12/16 (K150)
+
+Programa (grava) microcontroladores **Microchip PIC10 / PIC12 / PIC16** usando um
+programador **kitsrus K150** (o original, com firmware). A ferramenta fala o
+protocolo do firmware do K150 (P014/P016/P018/P18A) pela porta serial virtual
+(19200 8N1):
+
+1. **Conectar** — escolha a porta COM do K150 e clique **Conectar** (mostra o
+   protocolo e o tipo de firmware).
+2. **Dispositivo** — escolha o PIC na lista (catálogo com core type, power
+   sequence e erase mode por dispositivo).
+3. **Abrir HEX…** — carregue o arquivo `.hex` gerado pelo MPLAB X / XC8 / SDCC.
+4. **Operações** — **Detectar** (lê o device ID), **Verificar vazio**
+   (blank-check), **Ler** (dump do chip; pode ser salvo de volta como HEX),
+   **Verificar** (compara o chip com o HEX), **Gravar** (programa + verifica) e
+   **Apagar**.
+
+As operações rodam em segundo plano (a interface não trava) com log e barra de
+progresso.
+
+> **Firmware:** o firmware original do K150 (P016) só conhece os "core types"
+> 0-10. **PIC10F2xx e PIC16F54/57/59 usam os cores 11/12**, disponíveis apenas no
+> firmware **P018/P18A** — a ferramenta detecta o protocolo e avisa se o
+> firmware for antigo demais para o dispositivo escolhido.
+
 ## Run (development)
 
 ```bash
