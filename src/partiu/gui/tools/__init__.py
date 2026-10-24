@@ -12,6 +12,7 @@ from typing import Callable
 
 from .eseries import launch as eseries_launch
 from .flyback import launch as flyback_launch
+from .pic_programmer import launch as pic_programmer_launch
 from .repairs import launch as repairs_launch
 
 
@@ -32,4 +33,9 @@ TOOLS: list[Tool] = [
         launch=eseries_launch,
     ),
     Tool(id="repairs", label="Reparos…", launch=repairs_launch),
+    Tool(
+        id="pic_programmer",
+        label="Programador PIC10/12/16 (K150)…",
+        launch=pic_programmer_launch,
+    ),
 ]
